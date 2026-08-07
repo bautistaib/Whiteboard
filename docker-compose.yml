@@ -1,0 +1,13 @@
+# Whiteboard TTRPG — el DM no ejecuta esto a mano: usa empezar.bat / actualizar.bat
+services:
+  ttrpg-board:
+    build: .          # buildea local (npm install y todo ocurren DENTRO de Docker)
+    ports:
+      - "8000:8000"
+    volumes:
+      # todos los datos (campañas, escenas, imágenes) quedan en ./data
+      - ./data:/data
+    restart: unless-stopped
+    # TUNNEL=off desactiva el túnel de Cloudflare (solo acceso por LAN/localhost)
+    # environment:
+    #   - TUNNEL=off

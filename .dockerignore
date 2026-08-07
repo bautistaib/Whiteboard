@@ -1,0 +1,15 @@
+.git
+.github
+docs
+**/node_modules
+**/dist
+**/__pycache__
+**/.venv
+**/*.pyc
+server/tests
+server/web_dist
+server/data
+server/*.db
+data
+*.md
+!README.md
