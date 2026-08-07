@@ -20,7 +20,7 @@ Abrí el menú inicio, escribí `cmd` y apretá Enter. En la ventana negra pegá
 
 ```
 cd %USERPROFILE%\Documents
-git clone https://github.com/bautistaamarillo/ttrpg-board.git
+git clone https://github.com/bautistaib/ttrpg-board.git
 ```
 
 Esto crea la carpeta `Documentos\ttrpg-board` con todo lo necesario.
