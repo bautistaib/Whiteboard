@@ -1,0 +1,20 @@
+{
+    "typeCheckingMode": "standard",
+    "reportAssignmentType": "error",
+    "reportAttributeAccessIssue": "error",
+    "reportCallIssue": "error",
+    "reportIncompatibleVariableOverride": "error",
+    "reportMissingImports": "error",
+    "reportOperatorIssue": "error",
+    "reportPossiblyUnboundVariable": "error",
+    "reportUnboundVariable": "error",
+    "reportUndefinedVariable": "error",
+    "reportArgumentType": "none",
+    "reportFunctionMemberAccess": "none",
+    "reportIncompatibleMethodOverride": "none",
+    "reportGeneralTypeIssues": "none",
+    "reportInvalidTypeForm": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportPrivateImportUsage": "none",
+    "reportRedeclaration": "none"
+}
