@@ -40,6 +40,10 @@ class GridConfig:
     snap: bool = True
     metersPerCell: float = 1.5
     playersMoveAny: bool = True
+    # color sólido de fondo de la escena (null = tema oscuro default)
+    backgroundColor: str | None = None
+    # transform del mapa de fondo (calibración de tamaño/posición/rotación)
+    backgroundTransform: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "GridConfig":
@@ -58,6 +62,8 @@ class GridConfig:
             "snap",
             "metersPerCell",
             "playersMoveAny",
+            "backgroundColor",
+            "backgroundTransform",
         ):
             if key in data:
                 setattr(cfg, key, data[key])
@@ -76,6 +82,8 @@ class GridConfig:
             "snap": self.snap,
             "metersPerCell": self.metersPerCell,
             "playersMoveAny": self.playersMoveAny,
+            "backgroundColor": self.backgroundColor,
+            "backgroundTransform": self.backgroundTransform,
         }
 
 

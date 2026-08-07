@@ -317,6 +317,7 @@ async def dispatch(
 
     prefix = op_type.split(".", 1)[0]
     if prefix == "scene":
+        await state.flush()  # persistir cambio de escena/calibración de inmediato
         await broadcast_scene_state(conn, room, scene, op_type, payload)
         return
 

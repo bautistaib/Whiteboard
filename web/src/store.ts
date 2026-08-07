@@ -125,6 +125,14 @@ interface BoardState {
   measure: { ax: number; ay: number; bx: number; by: number } | null;
   /** editor de texto inline: worldX/worldY + valor; editId si edita uno existente */
   textEdit: { worldX: number; worldY: number; value: string; editId?: string } | null;
+  /** panel de opciones de herramienta visible/oculto */
+  toolOptionsOpen: boolean;
+  /** DM: edición del fondo de mapa desbloqueada (transform) */
+  backgroundUnlocked: boolean;
+  /** escena anterior (para volver con Alt+Izq) */
+  previousSceneId: string | null;
+  /** banner del túnel visible (DM) */
+  tunnelBannerOpen: boolean;
 
   // acciones
   setSession: (s: Partial<BoardState>) => void;
@@ -147,6 +155,10 @@ interface BoardState {
   setContextMenu: (m: { objId: string; x: number; y: number } | null) => void;
   setMeasure: (m: BoardState["measure"]) => void;
   setTextEdit: (t: BoardState["textEdit"]) => void;
+  setToolOptionsOpen: (v: boolean) => void;
+  setBackgroundUnlocked: (v: boolean) => void;
+  setPreviousSceneId: (id: string | null) => void;
+  setTunnelBannerOpen: (v: boolean) => void;
   updateObjectLocal: (id: string, patch: Record<string, any>) => void;
   /** Alta optimista: el objeto aparece ya; el eco del server (mismo uuid) lo pisa. */
   addObjectLocal: (obj: SceneObj) => void;
@@ -183,6 +195,10 @@ export const useStore = create<BoardState>((set, get) => ({
   contextMenu: null,
   measure: null,
   textEdit: null,
+  toolOptionsOpen: true,
+  backgroundUnlocked: false,
+  previousSceneId: null,
+  tunnelBannerOpen: true,
 
   setSession: (s) => set(s),
 
@@ -286,7 +302,7 @@ export const useStore = create<BoardState>((set, get) => ({
 
   setCamera: (cam) => set({ camera: cam }),
   setFollowDm: (v) => set({ followDm: v }),
-  setTool: (t) => set({ tool: t, selection: [], contextMenu: null, measure: null }),
+  setTool: (t) => set({ tool: t, selection: [], contextMenu: null, measure: null, toolOptionsOpen: true }),
   setDrawColor: (c) => set({ drawColor: c }),
   setDrawWidth: (w) => set({ drawWidth: w }),
 
@@ -300,6 +316,10 @@ export const useStore = create<BoardState>((set, get) => ({
   setContextMenu: (m) => set({ contextMenu: m }),
   setMeasure: (m) => set({ measure: m }),
   setTextEdit: (t) => set({ textEdit: t }),
+  setToolOptionsOpen: (v) => set({ toolOptionsOpen: v }),
+  setBackgroundUnlocked: (v) => set({ backgroundUnlocked: v }),
+  setPreviousSceneId: (id) => set({ previousSceneId: id }),
+  setTunnelBannerOpen: (v) => set({ tunnelBannerOpen: v }),
 
   addObjectLocal: (obj) =>
     set((st) => ({ objects: { ...st.objects, [obj.id]: obj } })),

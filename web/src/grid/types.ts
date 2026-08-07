@@ -1,5 +1,12 @@
 /** GridSystem del cliente: interfaz idéntica a server/app/grid.py. */
 
+export interface BackgroundTransform {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+}
+
 export interface GridConfig {
   type: "square" | "hex";
   orientation: "flat" | "pointy";
@@ -12,7 +19,16 @@ export interface GridConfig {
   snap: boolean;
   metersPerCell: number;
   playersMoveAny: boolean;
+  backgroundColor: string | null;
+  backgroundTransform: BackgroundTransform | null;
 }
+
+export const defaultBackgroundTransform = (): BackgroundTransform => ({
+  x: 0,
+  y: 0,
+  scale: 1,
+  rotation: 0,
+});
 
 export const defaultGridConfig = (): GridConfig => ({
   type: "square",
@@ -26,6 +42,8 @@ export const defaultGridConfig = (): GridConfig => ({
   snap: true,
   metersPerCell: 1.5,
   playersMoveAny: true,
+  backgroundColor: null,
+  backgroundTransform: null,
 });
 
 export interface Point {
@@ -48,5 +66,11 @@ export interface GridSystem {
 }
 
 export function normalizeGridConfig(data: Partial<GridConfig> | null | undefined): GridConfig {
-  return { ...defaultGridConfig(), ...(data ?? {}) };
+  const base = defaultGridConfig();
+  const merged = { ...base, ...(data ?? {}) } as GridConfig;
+  // asegurar transform válido
+  if (!merged.backgroundTransform) {
+    merged.backgroundTransform = defaultBackgroundTransform();
+  }
+  return merged;
 }

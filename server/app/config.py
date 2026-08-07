@@ -16,6 +16,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 
 ASSETS_DIR = DATA_DIR / "assets"
 DB_PATH = DATA_DIR / "ttrpg.db"
+SETTINGS_PATH = DATA_DIR / "settings.json"
 
 
 def ensure_dirs() -> None:

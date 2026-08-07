@@ -34,6 +34,7 @@ async def lifespan(_app: FastAPI):
     config.ensure_dirs()
     db.get_engine()
     state.load_from_db()
+    state.load_settings()
     state.start_flush_loop()
     await tunnel_manager.start(ws.broadcast_tunnel_url)
     yield
@@ -71,7 +72,9 @@ def create_app() -> FastAPI:
             id=uuid.uuid4().hex,
             campaign_id=campaign_id,
             name="Escena 1",
-            grid_config_json=json.dumps(GridConfig().to_dict()),
+            grid_config_json=json.dumps(
+                {**GridConfig().to_dict(), **state.default_grid}
+            ),
             is_active=True,
             sort_order=0,
         )
@@ -86,6 +89,32 @@ def create_app() -> FastAPI:
             "dm_url": f"/dm/{dm_token}",
             "player_url": f"/j/{player_token}",
         }
+
+    @app.get("/api/campaigns")
+    async def list_campaigns():
+        """Lista de campañas existentes (para reabrir sin crear una nueva)."""
+        campaigns = sorted(
+            state.campaigns.values(), key=lambda c: c.created_at, reverse=True
+        )
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "dm_url": f"/dm/{c.dm_token}",
+                "player_url": f"/j/{c.player_token}",
+                "created_at": c.created_at,
+            }
+            for c in campaigns
+        ]
+
+    @app.get("/api/settings")
+    async def get_settings():
+        return {"defaultGrid": state.default_grid}
+
+    @app.post("/api/settings")
+    async def save_settings(body: dict):
+        state.save_settings(body.get("defaultGrid", {}))
+        return {"ok": True}
 
     @app.get("/api/session/{token}")
     async def session_info(token: str):

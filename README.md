@@ -20,7 +20,7 @@ Abrí el menú inicio, escribí `cmd` y apretá Enter. En la ventana negra pegá
 
 ```
 cd %USERPROFILE%\Documents
-git clone https://github.com/bautistaib/ttrpg-board.git
+git clone https://github.com/bautistaib/Whiteboard.git
 ```
 
 Esto crea la carpeta `Documentos\ttrpg-board` con todo lo necesario.
@@ -71,17 +71,21 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 
 | Acción | Cómo |
 |---|---|
-| Mover la cámara | **Arrastrar con click derecho**, rueda (zoom) o herramienta ✋ |
+| Mover la cámara | **Arrastrar con click derecho**, rueda (zoom) o herramienta ✋ (o tecla H / Esc) |
 | Ping | Click de la rueda (o mantener presionado) |
 | Menú de un token | Click derecho sobre el token (formas, badges, duplicar…) |
-| Escribir texto | Herramienta T → click donde quieras escribir; Enter confirma, Esc cancela. Doble click en un texto lo edita |
-| Borrar un objeto entero | Borrador → click sobre el objeto |
+| Escribir texto | Herramienta T (o tecla T) → click donde quieras escribir; Enter confirma, Esc cancela. Doble click en un texto lo edita |
+| Puntito / trazo | Con el lápiz: un click hace un puntito, arrastrar hace un trazo |
+| Borrar un objeto entero | Borrador (E) → click sobre el objeto |
 | Borrar parte de un trazo | Borrador → arrastrar sobre el trazo (como el borrador de Paint) |
-| Color y grosor | Elegí cualquier herramienta de dibujo y aparece el panel de opciones |
+| Color y grosor | Elegí cualquier herramienta de dibujo y aparece el panel de opciones (⚙ para reabrirlo) |
+| Rotar/escalar el mapa | Panel de grilla (DM) → "Editar fondo" (desbloqueá, mové/rotá, volvé a bloquear para que no moleste) |
 | Multi-selección | Arrastrar un rectángulo o Shift+click |
+| Volver a la escena anterior | Alt + flecha izquierda |
 | Duplicar token | Ctrl+D |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Shift+Z |
 | Borrar selección | Supr |
+| Cambiar de herramienta | V/H/P/R/O/L/A/T/E/M |
 
 ## Preguntas frecuentes
 

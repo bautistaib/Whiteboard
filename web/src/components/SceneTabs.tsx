@@ -17,7 +17,12 @@ export default function SceneTabs() {
         <button
           key={s.id}
           className={`scene-tab ${s.isActive ? "active" : ""}`}
-          onClick={() => !s.isActive && wsClient.send("scene.switch", { sceneId: s.id })}
+          onClick={() => {
+            if (!s.isActive) {
+              useStore.getState().setPreviousSceneId(useStore.getState().sceneId);
+              wsClient.send("scene.switch", { sceneId: s.id });
+            }
+          }}
           onDoubleClick={() => {
             const name = window.prompt("Nombre de la escena:", s.name);
             if (name?.trim()) wsClient.send("scene.rename", { sceneId: s.id, name: name.trim() });

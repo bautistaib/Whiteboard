@@ -4,8 +4,21 @@ import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
 import Toolbar from "../components/Toolbar";
 import TunnelBanner from "../components/TunnelBanner";
-import { useStore } from "../store";
+import { useStore, type Tool } from "../store";
 import { wsClient } from "../ws";
+
+const TOOL_KEYS: Record<string, Tool> = {
+  v: "select",
+  h: "pan",
+  p: "pencil",
+  r: "rect",
+  o: "circle",
+  l: "line",
+  a: "arrow",
+  t: "text",
+  e: "eraser",
+  m: "measure",
+};
 
 export default function BoardPage() {
   const token = useStore((s) => s.token);
@@ -14,6 +27,9 @@ export default function BoardPage() {
   const connected = useStore((s) => s.connected);
   const campaignName = useStore((s) => s.campaignName);
   const role = useStore((s) => s.role);
+  const tunnelUrl = useStore((s) => s.tunnelUrl);
+  const tunnelBannerOpen = useStore((s) => s.tunnelBannerOpen);
+  const setTunnelBannerOpen = useStore((s) => s.setTunnelBannerOpen);
 
   useEffect(() => {
     wsClient.connect(token, name, clientId);
@@ -40,8 +56,16 @@ export default function BoardPage() {
         }
         st.setSelection([]);
       } else if (e.key === "Escape") {
+        // Esc → modo agarrar (pan) y limpia selección
+        st.setTool("pan");
         st.setSelection([]);
         st.setContextMenu(null);
+      } else if (e.altKey && e.key === "ArrowLeft" && st.previousSceneId) {
+        e.preventDefault();
+        wsClient.send("scene.switch", { sceneId: st.previousSceneId });
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        const t = TOOL_KEYS[e.key.toLowerCase()];
+        if (t) st.setTool(t);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -54,6 +78,11 @@ export default function BoardPage() {
         <span className="campaign-name">{campaignName || "…"}</span>
         {role === "dm" && <span className="badge-dm">DM</span>}
         <SceneTabs />
+        {role === "dm" && tunnelUrl && !tunnelBannerOpen && (
+          <button className="mini" title="Mostrar el link para compartir" onClick={() => setTunnelBannerOpen(true)}>
+            🔗 Link
+          </button>
+        )}
         <span className={`conn ${connected ? "ok" : "off"}`}>
           {connected ? "conectado" : "reconectando…"}
         </span>

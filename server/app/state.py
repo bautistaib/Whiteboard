@@ -8,10 +8,11 @@ todo con `load_from_db`.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
-from typing import Literal
+from typing import Any, Literal
 
-from . import db
+from . import config, db
 
 Role = Literal["dm", "player"]
 
@@ -33,10 +34,29 @@ class AppState:
         # URL pública del quick tunnel de Cloudflare (None si no hay)
         self.tunnel_url: str | None = None
 
+        # config de grilla por defecto para campañas/escenas nuevas (settings.json)
+        self.default_grid: dict[str, Any] = {}
+
         # Dirty tracking para el flush debounced
         self._dirty: dict[str, db.SQLModel] = {}
         self._deleted: list[db.SQLModel] = []
         self._flush_task: asyncio.Task | None = None
+
+    # ---- settings (default grid persistente entre sesiones) ----------------
+
+    def load_settings(self) -> None:
+        try:
+            raw = config.SETTINGS_PATH.read_text(encoding="utf-8")
+            self.default_grid = json.loads(raw).get("defaultGrid", {})
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.default_grid = {}
+
+    def save_settings(self, default_grid: dict[str, Any]) -> None:
+        self.default_grid = default_grid
+        config.ensure_dirs()
+        config.SETTINGS_PATH.write_text(
+            json.dumps({"defaultGrid": default_grid}), encoding="utf-8"
+        )
 
     # ---- carga inicial -------------------------------------------------
 

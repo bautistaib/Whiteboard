@@ -29,18 +29,27 @@ const COLOR_SWATCHES = [
 
 const WIDTH_PRESETS = [2, 4, 8, 16];
 
-/** Panel contextual de opciones: aparece al elegir una herramienta de dibujo. */
+/** Panel contextual de opciones: color + grosor (slider y presets). */
 export default function ToolOptionsPanel() {
   const tool = useStore((s) => s.tool);
+  const open = useStore((s) => s.toolOptionsOpen);
+  const setOpen = useStore((s) => s.setToolOptionsOpen);
   const drawColor = useStore((s) => s.drawColor);
   const setDrawColor = useStore((s) => s.setDrawColor);
   const drawWidth = useStore((s) => s.drawWidth);
   const setDrawWidth = useStore((s) => s.setDrawWidth);
 
   if (!TOOLS_WITH_OPTIONS.includes(tool)) return null;
+  if (!open) return null;
 
   return (
     <div className="tool-options">
+      <div className="panel-header">
+        <strong>Opciones</strong>
+        <button title="Cerrar" onClick={() => setOpen(false)}>
+          ✕
+        </button>
+      </div>
       <div className="swatches">
         {COLOR_SWATCHES.map((c) => (
           <button
@@ -59,6 +68,17 @@ export default function ToolOptionsPanel() {
           onChange={(e) => setDrawColor(e.target.value)}
         />
       </div>
+      <label className="width-row">
+        Grosor
+        <input
+          type="range"
+          min={1}
+          max={40}
+          value={drawWidth}
+          onChange={(e) => setDrawWidth(Number(e.target.value))}
+        />
+        <span className="muted small">{drawWidth}</span>
+      </label>
       <div className="width-presets">
         {WIDTH_PRESETS.map((w) => (
           <button

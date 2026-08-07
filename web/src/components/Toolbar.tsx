@@ -26,7 +26,11 @@ export default function Toolbar() {
   const role = useStore((s) => s.role);
   const followDm = useStore((s) => s.followDm);
   const setFollowDm = useStore((s) => s.setFollowDm);
+  const toolOptionsOpen = useStore((s) => s.toolOptionsOpen);
+  const setToolOptionsOpen = useStore((s) => s.setToolOptionsOpen);
   const [showGrid, setShowGrid] = useState(false);
+
+  const hasOptions = TOOLS.some((t) => t.id === tool);
 
   return (
     <div className="toolbar">
@@ -40,6 +44,16 @@ export default function Toolbar() {
           {t.icon}
         </button>
       ))}
+      <div className="tool-sep" />
+      {hasOptions && !toolOptionsOpen && (
+        <button
+          className="tool"
+          title="Mostrar opciones de color y grosor"
+          onClick={() => setToolOptionsOpen(true)}
+        >
+          ⚙
+        </button>
+      )}
       <div className="tool-sep" />
       <button className="tool" title="Deshacer (Ctrl+Z)" onClick={() => wsClient.send("undo")}>
         ↩

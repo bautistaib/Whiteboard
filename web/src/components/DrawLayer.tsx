@@ -1,5 +1,5 @@
 import type Konva from "konva";
-import { Arrow, Ellipse, Layer, Line, Rect, Text } from "react-konva";
+import { Arrow, Circle, Ellipse, Layer, Line, Rect, Text } from "react-konva";
 import { sortedObjects, useStore, type SceneObj } from "../store";
 import { sendThrottled, wsClient } from "../ws";
 import { prefixOf } from "../pages/BoardPage";
@@ -7,7 +7,11 @@ import { eraseJustDragged } from "./eraseFlag";
 import { registerNode } from "./nodeRegistry";
 
 /** Capa de dibujos: paths (lápiz), formas y textos. */
-export default function DrawLayer() {
+export default function DrawLayer({
+  onStartTextEdit,
+}: {
+  onStartTextEdit?: (worldX: number, worldY: number, editId?: string) => void;
+}) {
   const objects = useStore((s) => s.objects);
   const drawing = sortedObjects(objects).filter(
     (o) => o.type === "path" || o.type === "shape" || o.type === "text",
@@ -15,7 +19,7 @@ export default function DrawLayer() {
   return (
     <Layer>
       {drawing.map((obj) => (
-        <DrawObject key={obj.id} obj={obj} />
+        <DrawObject key={obj.id} obj={obj} onStartTextEdit={onStartTextEdit} />
       ))}
     </Layer>
   );
@@ -96,7 +100,13 @@ export function useObjectHandlers(obj: SceneObj, movable: boolean) {
   return { draggable, onClick, onContextMenu, onDragMove, onDragEnd };
 }
 
-function DrawObject({ obj }: { obj: SceneObj }) {
+function DrawObject({
+  obj,
+  onStartTextEdit,
+}: {
+  obj: SceneObj;
+  onStartTextEdit?: (worldX: number, worldY: number, editId?: string) => void;
+}) {
   const selected = useStore((s) => s.selection.includes(obj.id));
   const movable = obj.type !== "path"; // los paths no tienen op de update
   const handlers = useObjectHandlers(obj, movable);
@@ -112,11 +122,28 @@ function DrawObject({ obj }: { obj: SceneObj }) {
   };
 
   if (obj.type === "path") {
+    const pts = d.points ?? [];
+    // un solo punto (click del lápiz) → puntito relleno
+    if (pts.length === 2) {
+      return (
+        <>
+          <Circle
+            {...common}
+            x={(d.x ?? 0) + pts[0]}
+            y={(d.y ?? 0) + pts[1]}
+            radius={(d.width ?? 4) / 2}
+            fill={d.color ?? "#fff"}
+            hitRadius={Math.max(8, (d.width ?? 4) / 2 + 4)}
+          />
+          {selected && <SelectionHalo obj={obj} />}
+        </>
+      );
+    }
     return (
       <>
         <Line
           {...common}
-          points={d.points ?? []}
+          points={pts}
           stroke={d.color ?? "#fff"}
           strokeWidth={d.width ?? 4}
           lineCap="round"
@@ -139,13 +166,8 @@ function DrawObject({ obj }: { obj: SceneObj }) {
           fill={d.color ?? "#fff"}
           onDblClick={() => {
             // doble click → edición inline (patrón estándar)
-            if (canModify) {
-              useStore.getState().setTextEdit({
-                worldX: d.x ?? 0,
-                worldY: d.y ?? 0,
-                value: d.text ?? "",
-                editId: obj.id,
-              });
+            if (canModify && onStartTextEdit) {
+              onStartTextEdit(d.x ?? 0, d.y ?? 0, obj.id);
             }
           }}
         />

@@ -10,6 +10,35 @@ export async function createCampaign(name: string): Promise<{ dm_url: string; pl
   return resp.json();
 }
 
+export interface CampaignSummary {
+  id: string;
+  name: string;
+  dm_url: string;
+  player_url: string;
+  created_at: number;
+}
+
+export async function listCampaigns(): Promise<CampaignSummary[]> {
+  const resp = await fetch("/api/campaigns");
+  if (!resp.ok) throw new Error("no se pudieron listar las campañas");
+  return resp.json();
+}
+
+export async function getSettings(): Promise<{ defaultGrid: Record<string, any> }> {
+  const resp = await fetch("/api/settings");
+  if (!resp.ok) throw new Error("error");
+  return resp.json();
+}
+
+export async function saveSettings(defaultGrid: Record<string, any>): Promise<void> {
+  const resp = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ defaultGrid }),
+  });
+  if (!resp.ok) throw new Error("no se pudo guardar la configuración");
+}
+
 export async function sessionInfo(token: string): Promise<{ role: "dm" | "player"; campaignName: string }> {
   const resp = await fetch(`/api/session/${token}`);
   if (!resp.ok) throw new Error("link inválido");

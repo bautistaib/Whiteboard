@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { saveSettings } from "../api";
 import { useStore } from "../store";
 import { wsClient } from "../ws";
 import type { GridConfig } from "../grid";
@@ -6,7 +7,11 @@ import type { GridConfig } from "../grid";
 /** Panel de grilla y calibración (solo DM): sliders con preview en vivo. */
 export default function CalibrationPanel({ onClose }: { onClose: () => void }) {
   const grid = useStore((s) => s.grid);
+  const token = useStore((s) => s.token);
+  const backgroundUnlocked = useStore((s) => s.backgroundUnlocked);
+  const setBackgroundUnlocked = useStore((s) => s.setBackgroundUnlocked);
   const timer = useRef<number | null>(null);
+  const [saved, setSaved] = useState(false);
 
   // debounce: preview local inmediato (vía scene.update del server) + envío
   const send = (patch: Partial<GridConfig>) => {
@@ -112,6 +117,40 @@ export default function CalibrationPanel({ onClose }: { onClose: () => void }) {
           onChange={(e) => send({ metersPerCell: Number(e.target.value) || 1.5 })}
         />
       </label>
+      <div className="panel-sep" />
+      <label>
+        <input
+          type="checkbox"
+          checked={backgroundUnlocked}
+          onChange={(e) => setBackgroundUnlocked(e.target.checked)}
+        />
+        Editar fondo (mover/rotar/escalar)
+      </label>
+      <label>
+        Color de fondo
+        <input
+          type="color"
+          value={grid.backgroundColor ?? "#16181d"}
+          onChange={(e) => send({ backgroundColor: e.target.value })}
+        />
+      </label>
+      <button
+        className="full"
+        onClick={async () => {
+          try {
+            await saveSettings(grid);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 1500);
+          } catch {
+            /* ignore */
+          }
+        }}
+      >
+        {saved ? "¡Guardado!" : "Guardar como predeterminado"}
+      </button>
+      <p className="muted small">
+        Las nuevas campañas y escenas arrancan con esta config.
+      </p>
     </div>
   );
 }

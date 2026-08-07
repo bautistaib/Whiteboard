@@ -45,6 +45,64 @@ def test_create_campaign_returns_two_links(client, campaign):
     assert campaign["dm_token"] != campaign["player_token"]
 
 
+def test_list_campaigns_includes_existing(client, campaign):
+    # crear una segunda campaña
+    client.post("/api/campaigns", json={"name": "Otra"})
+    resp = client.get("/api/campaigns")
+    assert resp.status_code == 200
+    names = [c["name"] for c in resp.json()]
+    assert "Mesa de prueba" in names
+    assert "Otra" in names
+    # cada una trae sus links
+    first = resp.json()[0]
+    assert first["dm_url"].startswith("/dm/")
+    assert first["player_url"].startswith("/j/")
+
+
+def test_settings_persist_default_grid(client):
+    assert client.get("/api/settings").json() == {"defaultGrid": {}}
+    resp = client.post(
+        "/api/settings",
+        json={"defaultGrid": {"cellSize": 100, "metersPerCell": 2.0}},
+    )
+    assert resp.status_code == 200
+    from app import config
+
+    assert client.get("/api/settings").json()["defaultGrid"]["cellSize"] == 100
+    # una nueva campaña usa el default guardado
+    urls = client.post("/api/campaigns", json={"name": "Con default"}).json()
+    token = urls["dm_url"].split("/")[-1]
+    with client.websocket_connect(f"/ws/{token}?name=DM&clientId=c1") as sock:
+        snap = sock.receive_json()
+        assert snap["scene"]["grid"]["cellSize"] == 100
+        assert snap["scene"]["grid"]["metersPerCell"] == 2.0
+
+
+def test_scene_op_flushes_immediately(client, campaign):
+    """Un setGrid debe quedar persistido aunque el server se caiga antes del debounce."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as sock:
+        sock.receive_json()
+        sock.receive_json()
+        sock.receive_json()
+        sock.send_json(
+            {
+                "type": "scene.setGrid",
+                "opId": "1",
+                "payload": {"grid": {"type": "hex", "cellSize": 80, "backgroundColor": "#202020"}},
+            }
+        )
+        sock.receive_json()
+
+    fresh = AppState()
+    fresh.load_from_db()
+    scene = next(iter(fresh.scenes.values()))
+    grid = json.loads(scene.grid_config_json)
+    assert grid["type"] == "hex"
+    assert grid["backgroundColor"] == "#202020"
+
+
 def test_session_info_roles(client, campaign):
     dm = client.get(f"/api/session/{campaign['dm_token']}").json()
     player = client.get(f"/api/session/{campaign['player_token']}").json()

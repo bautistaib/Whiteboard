@@ -111,6 +111,7 @@ def reset_engine_for_tests(db_path) -> None:
     config.DATA_DIR = db_path.parent
     config.DB_PATH = db_path
     config.ASSETS_DIR = db_path.parent / "assets"
+    config.SETTINGS_PATH = db_path.parent / "settings.json"
     get_engine()
 
 

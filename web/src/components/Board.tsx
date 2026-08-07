@@ -38,6 +38,7 @@ export default function Board() {
   const snapshotReceived = useStore((s) => s.snapshotReceived);
   const textEdit = useStore((s) => s.textEdit);
   const setTextEdit = useStore((s) => s.setTextEdit);
+  const setToolOptionsOpen = useStore((s) => s.setToolOptionsOpen);
   const addObjectLocal = useStore((s) => s.addObjectLocal);
   const updateObjectLocal = useStore((s) => s.updateObjectLocal);
 
@@ -115,6 +116,7 @@ export default function Board() {
 
   const onMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     setContextMenu(null);
+    if (e.evt.button === 0) setToolOptionsOpen(false); // cerrar panel de opciones al dibujar
     const pos = worldPos();
 
     // click de rueda → ping
@@ -156,7 +158,7 @@ export default function Board() {
     }
     if (tool === "text") {
       if (!isEmptyTarget(e)) return;
-      setTextEdit({ worldX: pos.x, worldY: pos.y, value: "" });
+      startTextEdit(pos.x, pos.y);
       return;
     }
     if (tool === "measure") {
@@ -320,14 +322,33 @@ export default function Board() {
 
     if (p.tool === "pencil") {
       const pts = p.points ?? [];
-      if (pts.length >= 4) {
+      if (pts.length >= 2) {
+        // un click = 1 punto (2 valores) → puntito; un trazo = varios
         const data = { x: 0, y: 0, points: pts, color: drawColor, width: drawWidth };
         const id = optimisticAdd("path", data);
         wsClient.send("draw.add", { id, data });
       }
       return;
     }
-    if (distPx < 3) return; // click sin arrastre
+
+    // AoE: un click simple basta para colocar (1 celda); el arrastre define tamaño/ángulo
+    if (p.tool.startsWith("aoe-")) {
+      const cells = Math.max(1, Math.round(distPx / gridConfig.cellSize));
+      const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const data = {
+        shape: p.tool.replace("aoe-", ""),
+        x: p.start.x,
+        y: p.start.y,
+        size_cells: cells,
+        rotation: p.tool === "aoe-circle" ? 0 : angle,
+        color: drawColor,
+      };
+      const id = optimisticAdd("aoe", data);
+      wsClient.send("aoe.add", { id, data });
+      return;
+    }
+
+    if (distPx < 3) return; // click sin arrastre para el resto de las formas
 
     if (p.tool === "rect" || p.tool === "circle") {
       const data =
@@ -367,44 +388,36 @@ export default function Board() {
       wsClient.send("shape.add", { id, data });
       return;
     }
-    if (p.tool.startsWith("aoe-")) {
-      const cells = Math.max(1, Math.round(distPx / gridConfig.cellSize));
-      const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-      const data = {
-        shape: p.tool.replace("aoe-", ""),
-        x: p.start.x,
-        y: p.start.y,
-        size_cells: cells,
-        rotation: p.tool === "aoe-circle" ? 0 : angle,
-        color: drawColor,
-      };
-      const id = optimisticAdd("aoe", data);
-      wsClient.send("aoe.add", { id, data });
-    }
   };
 
   // ---- texto inline ----------------------------------------------------------
 
-  const commitTextEdit = () => {
-    if (!textEdit) return;
-    const value = textEdit.value.trim();
-    if (textEdit.editId) {
-      if (value) {
-        updateObjectLocal(textEdit.editId, { text: value });
-        wsClient.send("text.update", { id: textEdit.editId, patch: { text: value } });
+  const startTextEdit = (worldX: number, worldY: number, editId?: string) => {
+    const st = useStore.getState();
+    const existing = editId ? st.objects[editId]?.data : undefined;
+    setTextEdit({
+      worldX,
+      worldY,
+      value: existing?.text ?? "",
+      editId,
+    });
+  };
+
+  const commitTextEdit = (value: string) => {
+    const te = useStore.getState().textEdit;
+    setTextEdit(null);
+    if (!te) return;
+    const v = value.trim();
+    if (te.editId) {
+      if (v) {
+        updateObjectLocal(te.editId, { text: v });
+        wsClient.send("text.update", { id: te.editId, patch: { text: v } });
       }
-    } else if (value) {
-      const data = {
-        x: textEdit.worldX,
-        y: textEdit.worldY,
-        text: value,
-        color: drawColor,
-        fontSize: 22,
-      };
+    } else if (v) {
+      const data = { x: te.worldX, y: te.worldY, text: v, color: drawColor, fontSize: 22 };
       const id = optimisticAdd("text", data);
       wsClient.send("text.add", { id, data });
     }
-    setTextEdit(null);
   };
 
   // ---- pan (drag del stage con tool pan) --------------------------------------
@@ -473,10 +486,13 @@ export default function Board() {
       }
     : null;
 
+  const bgColor = gridConfig.backgroundColor ?? undefined;
+
   return (
     <div
       ref={containerRef}
       className="board-canvas"
+      style={bgColor ? { backgroundColor: bgColor } : undefined}
       onDrop={onDrop}
       onDragOver={(e) => e.preventDefault()}
     >
@@ -502,38 +518,73 @@ export default function Board() {
       >
         <BackgroundLayer />
         <GridLayer width={size.width} height={size.height} />
-        <DrawLayer />
+        <DrawLayer onStartTextEdit={startTextEdit} />
         <AoELayer />
         <TokenLayer />
         <OverlayLayer preview={preview} selectionRect={selRect} />
       </Stage>
       {!snapshotReceived && <div className="board-loading">Cargando escena…</div>}
       {textEdit && textEditScreen && (
-        <textarea
-          autoFocus
-          className="text-editor"
-          style={{
-            left: textEditScreen.left,
-            top: textEditScreen.top,
-            fontSize: Math.max(12, 22 * camera.scale),
-            color: drawColor,
-          }}
-          value={textEdit.value}
-          placeholder="Escribí…"
-          onChange={(e) => setTextEdit({ ...textEdit, value: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              commitTextEdit();
-            } else if (e.key === "Escape") {
-              setTextEdit(null);
-            }
-          }}
-          onBlur={commitTextEdit}
+        <TextEditor
+          key={textEdit.editId ?? "new"}
+          left={textEditScreen.left}
+          top={textEditScreen.top}
+          scale={camera.scale}
+          color={drawColor}
+          initial={textEdit.value}
+          onCommit={commitTextEdit}
+          onCancel={() => setTextEdit(null)}
         />
       )}
       <TokenContextMenu />
     </div>
+  );
+}
+
+/** Editor de texto inline con estado local (sin re-renders del store por tecla). */
+function TextEditor({
+  left,
+  top,
+  scale,
+  color,
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  left: number;
+  top: number;
+  scale: number;
+  color: string;
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const committed = useRef(false);
+  return (
+    <textarea
+      autoFocus
+      className="text-editor"
+      style={{ left, top, fontSize: Math.max(12, 22 * scale), color }}
+      value={value}
+      placeholder="Escribí…"
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          committed.current = true;
+          onCommit(value);
+        } else if (e.key === "Escape") {
+          committed.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={() => {
+        if (committed.current) return;
+        committed.current = true;
+        onCommit(value);
+      }}
+    />
   );
 }
 

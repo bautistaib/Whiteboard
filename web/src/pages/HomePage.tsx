@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
-import { createCampaign, tunnelInfo } from "../api";
+import { createCampaign, listCampaigns, tunnelInfo, type CampaignSummary } from "../api";
 
 export default function HomePage() {
   const [name, setName] = useState("Mi campaña");
   const [links, setLinks] = useState<{ dm_url: string; player_url: string } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
+
+  const refresh = () => listCampaigns().then(setCampaigns).catch(() => {});
+  useEffect(() => {
+    refresh();
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -13,6 +19,7 @@ export default function HomePage() {
     setError("");
     try {
       setLinks(await createCampaign(name));
+      refresh();
     } catch (err: any) {
       setError(err.message ?? "error");
     } finally {
@@ -28,18 +35,36 @@ export default function HomePage() {
         link con tu mesa.
       </p>
       {!links ? (
-        <form onSubmit={submit} className="home-form">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nombre de la campaña"
-            maxLength={80}
-          />
-          <button type="submit" disabled={busy}>
-            {busy ? "Creando…" : "Crear campaña"}
-          </button>
-          {error && <p className="error">{error}</p>}
-        </form>
+        <>
+          <form onSubmit={submit} className="home-form">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nombre de la campaña"
+              maxLength={80}
+            />
+            <button type="submit" disabled={busy}>
+              {busy ? "Creando…" : "Crear campaña"}
+            </button>
+            {error && <p className="error">{error}</p>}
+          </form>
+          {campaigns.length > 0 && (
+            <div className="home-campaigns">
+              <h2>Tus campañas</h2>
+              <p className="muted">Reabrí una campaña anterior con sus tokens y mapas.</p>
+              {campaigns.map((c) => (
+                <div key={c.id} className="campaign-row">
+                  <a className="campaign-open" href={c.dm_url}>
+                    {c.name}
+                  </a>
+                  <span className="muted small">
+                    {new Date(c.created_at * 1000).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <CampaignCreated dmUrl={links.dm_url} playerUrl={links.player_url} />
       )}

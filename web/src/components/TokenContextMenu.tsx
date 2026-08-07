@@ -1,9 +1,19 @@
+import type Konva from "konva";
 import { useState } from "react";
 import { uploadImage } from "../api";
 import { BADGE_PRESETS, useStore } from "../store";
 import { wsClient } from "../ws";
 import { prefixOf } from "../pages/BoardPage";
 import { getNode } from "./nodeRegistry";
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
 
 /** Menú contextual (click derecho) sobre tokens, dibujos y AoE. */
 export default function TokenContextMenu() {
@@ -37,13 +47,39 @@ export default function TokenContextMenu() {
     : [];
 
   const convertToToken = async () => {
-    const node = getNode(obj.id);
-    if (!node || busy) return;
+    if (busy) return;
+    // convertir la selección entera (varios trazos) en un solo token
+    const st = useStore.getState();
+    const ids = st.selection.length > 1 ? st.selection : [obj.id];
+    const nodes = ids.map((id) => getNode(id)).filter(Boolean) as Konva.Node[];
+    if (!nodes.length) return;
     setBusy(true);
     try {
-      const rect = node.getClientRect();
-      const dataUrl = node.toDataURL({ pixelRatio: 1 });
-      const blob = await (await fetch(dataUrl)).blob();
+      // bounding box absoluto (px de pantalla) de todos los nodos
+      const rects = nodes.map((n) => n.getClientRect());
+      const minX = Math.min(...rects.map((r) => r.x));
+      const minY = Math.min(...rects.map((r) => r.y));
+      const maxX = Math.max(...rects.map((r) => r.x + r.width));
+      const maxY = Math.max(...rects.map((r) => r.y + r.height));
+      const pad = 4;
+      const W = Math.max(1, Math.ceil(maxX - minX + pad * 2));
+      const H = Math.max(1, Math.ceil(maxY - minY + pad * 2));
+
+      // componer todos los nodos en un canvas del tamaño del bbox
+      const canvas = document.createElement("canvas");
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      for (const n of nodes) {
+        const url = n.toDataURL({ pixelRatio: 1 });
+        const imgEl = await loadImage(url);
+        const r = n.getClientRect();
+        ctx.drawImage(imgEl, r.x - minX + pad, r.y - minY + pad);
+      }
+      const blob: Blob = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b!), "image/png"),
+      );
       const tokenName = window.prompt("Nombre del personaje:", "Dibujo") ?? "Dibujo";
       const uploaded = await uploadImage(token, blob, {
         kind: "token",
@@ -53,19 +89,23 @@ export default function TokenContextMenu() {
       wsClient.send("token.add", {
         id: crypto.randomUUID(),
         data: {
-          x: rect.x + rect.width / 2,
-          y: rect.y + rect.height / 2,
+          x: minX + W / 2,
+          y: minY + H / 2,
           asset_id: uploaded.id,
           character_id: uploaded.characterId,
           active_variant_id: uploaded.variantId,
-          size_cells: Math.max(1, Math.round(rect.width / 64)),
+          size_cells: Math.max(1, Math.round(W / st.grid.cellSize)),
           name: tokenName,
           show_name: true,
           rotation: 0,
           badges: [],
         },
       });
-      wsClient.send(`${prefixOf(obj.type)}.remove`, { id: obj.id });
+      // borrar los originales
+      for (const id of ids) {
+        const o = st.objects[id];
+        if (o) wsClient.send(`${prefixOf(o.type)}.remove`, { id });
+      }
     } finally {
       setBusy(false);
       close();

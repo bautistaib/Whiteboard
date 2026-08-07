@@ -81,6 +81,32 @@ select {
   border-color: #3d6bfe;
   background: #16233d;
 }
+
+/* ---- lista de campañas existentes ---- */
+.home-campaigns {
+  margin-top: 20px;
+  border-top: 1px solid #3a4150;
+  padding-top: 16px;
+}
+.home-campaigns h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.campaign-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.campaign-row:hover {
+  background: #262c38;
+}
+.campaign-open {
+  font-weight: 600;
+  color: #4fc3f7;
+  text-decoration: none;
+}
 .copyable {
   display: flex;
   gap: 8px;
@@ -231,6 +257,24 @@ select {
 .width-presets {
   display: flex;
   gap: 6px;
+}
+.width-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.width-row input[type="range"] {
+  flex: 1;
+}
+.panel-sep {
+  height: 1px;
+  background: #3a4150;
+  margin: 2px 0;
+}
+button.full {
+  width: 100%;
+  margin-top: 4px;
 }
 .width-preset {
   width: 40px;

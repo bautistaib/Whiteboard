@@ -5,10 +5,11 @@ import { useStore } from "../store";
 export default function TunnelBanner() {
   const role = useStore((s) => s.role);
   const tunnelUrl = useStore((s) => s.tunnelUrl);
+  const open = useStore((s) => s.tunnelBannerOpen);
+  const setOpen = useStore((s) => s.setTunnelBannerOpen);
   const [copied, setCopied] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
 
-  if (role !== "dm" || !tunnelUrl || dismissed) return null;
+  if (role !== "dm" || !tunnelUrl || !open) return null;
 
   return (
     <div className="tunnel-banner">
@@ -24,7 +25,7 @@ export default function TunnelBanner() {
       >
         {copied ? "¡Copiado!" : "Copiar"}
       </button>
-      <button className="mini" onClick={() => setDismissed(true)}>
+      <button className="mini" onClick={() => setOpen(false)}>
         ✕
       </button>
     </div>
