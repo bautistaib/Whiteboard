@@ -6,6 +6,7 @@ server/data/
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
 *.db
 *.db-shm
 *.db-wal
