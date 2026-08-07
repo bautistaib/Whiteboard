@@ -1,0 +1,20 @@
+# datos en vivo del DM (backup = copiar esta carpeta)
+data/
+server/data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.db
+*.db-shm
+*.db-wal
+
+# node / build
+node_modules/
+web/dist/
+server/web_dist/
+
+# varios
+.DS_Store
+Thumbs.db
