@@ -40,6 +40,7 @@ Whiteboard/
       grid/                   GridSystem del cliente (espejo del server)
       components/Board.tsx    Stage Konva: pan/zoom, herramientas, drop desde biblioteca
       components/             capas (Background/Grid/Draw/AoE/Token/Overlay) + UI
+                              (SelectionTransformer: rotación libre; objectBounds: bbox por tipo)
 ```
 
 ## Arquitectura
@@ -77,7 +78,7 @@ Objetos (persisten, entran al undo):
 | `token.remove` | `{id}` | |
 | `token.duplicate` | `{id, newId, x, y}` | broadcast normalizado como `token.add` |
 | `token.setVariant` | `{id, variantId}` | server resuelve asset_id/size_cells de la variante |
-| `draw.add/remove` | | paths del lápiz |
+| `draw.add/update/remove` | | paths del lápiz; `update` mueve el trazo (patch x/y) |
 | `shape.add/update/remove` | | rect/circle/line/arrow |
 | `text.add/update/remove` | | |
 | `aoe.add/update/remove` | | circle/cone/line, size_cells, rotation |
@@ -102,7 +103,9 @@ Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync
 - **Borrador**: click simple = borrar objeto entero; arrastre = borrado parcial de trazos (los puntos del path bajo el cursor se eliminan y el path se divide en segmentos: un `draw.remove` + un `draw.add` por segmento). `eraseFlag.ts` evita que el click posterior al arrastre borre el objeto entero por accidente.
 - **Opciones de herramienta**: panel contextual (`ToolOptionsPanel`) visible con cualquier herramienta de dibujo; el grosor seleccionado también define el tamaño del borrador.
 - **Permisos por defecto**: `playersMoveAny` default `true` (cualquiera mueve cualquier token); el DM lo restringe desde el panel de grilla.
-- **Drag en grupo**: todos los miembros de la selección streamean su `token.move` (throttled por id), no solo el líder — el grupo se ve moverse en vivo en los demás clientes.
+- **Drag en grupo**: todos los miembros de la selección streamean su posición (throttled por id), no solo el líder — el grupo se ve moverse en vivo en los demás clientes. Aplica a tokens (`token.move`, en `TokenLayer`) y a dibujos — paths/shapes/text/aoe (`<prefix>.update`, en `useObjectHandlers` con un `groupStart` compartido por capa). Los trazos del lápiz son arrastrables como cualquier objeto.
+- **Selección por rectángulo y halo**: usan el bounding box del objeto (`components/objectBounds.ts`), no su origen — imprescindible para los trazos del lápiz, que guardan `x,y` en (0,0) con puntos absolutos. Así se pueden seleccionar las partes de un dibujo y, p. ej., convertirlas juntas en un token.
+- **Rotación libre**: con un único `aoe`/`shape`/`text`/`path` seleccionado (herramienta select) aparece un handle de rotación (`components/SelectionTransformer.tsx`, Konva Transformer con resize deshabilitado, en su propia capa porque OverlayLayer tiene `listening={false}`). El Transformer rota alrededor del centro visual del nodo (puede ajustar x/y), así que el patch manda `{x, y, rotation}`. Los tokens rotan de a 90° por menú contextual. Ojo: un path rotado hace que el borrador parcial transforme su trazo a coords locales del path (mundo = `(x,y) + rot(rotation)·punto`) y que los segmentos resultantes hereden la rotación.
 - **Duplicar**: la celda destino se busca con el `GridSystem` activo (`snap`/`cellOf`), así funciona en cuadrada y hex; el set de celdas ocupadas es compartido entre los clones de un mismo batch (nunca caen dos en la misma celda).
 - **Export PNG**: el botón 📷 (Toolbar) captura el `Stage` (registrado en `nodeRegistry` como `"stage"`) vía `toCanvas` y lo compone sobre el `backgroundColor` de la escena — exporta exactamente lo visible en pantalla.
 

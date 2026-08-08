@@ -1,6 +1,6 @@
 import type Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage } from "react-konva";
+import { Layer, Stage } from "react-konva";
 import { gridFromConfig } from "../grid";
 import { useStore, type SceneObj } from "../store";
 import { sendThrottled, wsClient } from "../ws";
@@ -10,9 +10,11 @@ import DrawLayer from "./DrawLayer";
 import { markEraseDragged } from "./eraseFlag";
 import GridLayer from "./GridLayer";
 import OverlayLayer, { type Preview } from "./OverlayLayer";
+import SelectionTransformer from "./SelectionTransformer";
 import TokenContextMenu from "./TokenContextMenu";
 import TokenLayer from "./TokenLayer";
 import { registerNode } from "./nodeRegistry";
+import { objectBounds } from "./objectBounds";
 
 interface Point {
   x: number;
@@ -260,15 +262,30 @@ export default function Board() {
       const oy = obj.data.y ?? 0;
       const halfWidth = (obj.data.width ?? 4) / 2;
 
+      // el trazo del borrador pasa a coords LOCALES del path (el path puede
+      // estar rotado: mundo = (ox,oy) + rot(rotation)·punto)
+      const rot = obj.data.rotation ?? 0;
+      const rad = (-rot * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const localStroke =
+        rot === 0
+          ? stroke.map((p) => ({ x: p.x - ox, y: p.y - oy }))
+          : stroke.map((p) => {
+              const dx = p.x - ox;
+              const dy = p.y - oy;
+              return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+            });
+
       // runs de puntos que sobreviven; el radio incluye la mitad del grosor del trazo
       const effRadius = radius + halfWidth;
       const runs: number[][] = [];
       let current: number[] = [];
       for (let i = 0; i < pts.length; i += 2) {
-        const px = ox + pts[i];
-        const py = oy + pts[i + 1];
+        const px = pts[i];
+        const py = pts[i + 1];
         let erased = false;
-        for (const p of stroke) {
+        for (const p of localStroke) {
           const ddx = p.x - px;
           const ddy = p.y - py;
           if (ddx * ddx + ddy * ddy < effRadius * effRadius) {
@@ -291,7 +308,14 @@ export default function Board() {
       st.removeObjectLocal(obj.id);
       wsClient.send("draw.remove", { id: obj.id });
       for (const run of runs) {
-        const data = { x: ox, y: oy, points: run, color: obj.data.color, width: obj.data.width };
+        const data = {
+          x: ox,
+          y: oy,
+          points: run,
+          color: obj.data.color,
+          width: obj.data.width,
+          rotation: rot,
+        };
         const newId = optimisticAdd("path", data);
         wsClient.send("draw.add", { id: newId, data });
       }
@@ -312,10 +336,8 @@ export default function Board() {
     const objects = useStore.getState().objects;
     const hits: string[] = [];
     for (const o of Object.values(objects)) {
-      const ox = o.data.x ?? 0;
-      const oy = o.data.y ?? 0;
-      const half = o.type === "token" ? ((o.data.size_cells ?? 1) * gridConfig.cellSize) / 2 : 0;
-      if (ox + half >= rx && ox - half <= rx + rw && oy + half >= ry && oy - half <= ry + rh) {
+      const b = objectBounds(o, gridConfig.cellSize);
+      if (b.maxX >= rx && b.minX <= rx + rw && b.maxY >= ry && b.minY <= ry + rh) {
         hits.push(o.id);
       }
     }
@@ -529,6 +551,10 @@ export default function Board() {
         <AoELayer />
         <TokenLayer />
         <OverlayLayer preview={preview} selectionRect={selRect} />
+        {/* capa del handle de rotación (necesita listening, OverlayLayer no lo tiene) */}
+        <Layer>
+          <SelectionTransformer />
+        </Layer>
       </Stage>
       {!snapshotReceived && <div className="board-loading">Cargando escena…</div>}
       {textEdit && textEditScreen && (
