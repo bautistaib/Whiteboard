@@ -63,24 +63,60 @@ def test_list_campaigns_includes_existing(client, campaign):
     assert first["player_url"].startswith("/j/")
 
 
+# el edge de Cloudflare siempre agrega estos headers al tráfico del túnel
+# (y pisa los que mande el cliente); su ausencia = tráfico local
+TUNNEL_HEADERS = {"Cf-Connecting-Ip": "203.0.113.7", "Cf-Ray": "8f1a2b3c4d5e6f7a-EZE"}
+
+
 def test_campaign_admin_endpoints_require_dm(client, campaign):
-    """Los links de DM no pueden quedar expuestos a cualquiera (jugadores)."""
-    # listar sin token / con token de jugador → prohibido
-    assert client.get("/api/campaigns").status_code == 403
+    """Los links de DM no pueden quedar expuestos a quien entre por el túnel."""
+    dm = campaign["dm_token"]
+    player = campaign["player_token"]
+
+    # tráfico local (sin headers Cf-*): abierto — es el DM en su propia PC
+    assert client.get("/api/campaigns").status_code == 200
+    assert client.post("/api/campaigns", json={"name": "Local"}).status_code == 200
+
+    # vía túnel sin token / con token de jugador → prohibido
+    assert client.get("/api/campaigns", headers=TUNNEL_HEADERS).status_code == 403
     assert (
-        client.get("/api/campaigns", params={"dm": campaign["player_token"]}).status_code
-        == 403
-    )
-    assert client.get("/api/campaigns", params={"dm": "cualquiera"}).status_code == 403
-    # crear campañas extra sin prueba de DM → prohibido
-    assert client.post("/api/campaigns", json={"name": "Colada"}).status_code == 403
-    assert (
-        client.post(
-            "/api/campaigns", json={"name": "Colada", "dm": campaign["player_token"]}
+        client.get(
+            "/api/campaigns", headers=TUNNEL_HEADERS, params={"dm": player}
         ).status_code
         == 403
     )
-    assert len(state.campaigns) == 1
+    assert (
+        client.get(
+            "/api/campaigns", headers=TUNNEL_HEADERS, params={"dm": "cualquiera"}
+        ).status_code
+        == 403
+    )
+    # crear campañas extra por el túnel sin prueba de DM → prohibido
+    assert (
+        client.post("/api/campaigns", headers=TUNNEL_HEADERS, json={"name": "Colada"}).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            "/api/campaigns",
+            headers=TUNNEL_HEADERS,
+            json={"name": "Colada", "dm": player},
+        ).status_code
+        == 403
+    )
+    assert len(state.campaigns) == 2  # solo la del fixture + "Local"
+
+    # vía túnel CON token de DM → permitido (el DM puede usar el link público)
+    assert (
+        client.get("/api/campaigns", headers=TUNNEL_HEADERS, params={"dm": dm}).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            "/api/campaigns", headers=TUNNEL_HEADERS, json={"name": "Remota", "dm": dm}
+        ).status_code
+        == 200
+    )
 
 
 def test_first_campaign_bootstrap_is_open(client):

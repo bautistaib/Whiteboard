@@ -100,8 +100,8 @@ export default function HomePage() {
           )}
           {listFailed && campaigns.length === 0 && (
             <p className="muted small">
-              ¿Tenías campañas y no las ves? Entrá una vez con tu link de DM y vuelven a
-              aparecer acá.
+              ¿Tenías campañas y no las ves? Abrí esta página en la PC donde corre el
+              server, o entrá una vez con tu link de DM.
             </p>
           )}
         </>

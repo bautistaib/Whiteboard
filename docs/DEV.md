@@ -124,8 +124,9 @@ Interfaz idéntica en server (`app/grid.py`) y cliente (`web/src/grid/`): `cellO
 
 ### REST de campañas y acceso
 
-- `POST /api/campaigns` — crea campaña. La primera del server es libre (bootstrap); si ya hay campañas exige `dm` (token de DM de una existente) en el body, para que un jugador no pueda crear campañas ni spam.
-- `GET /api/campaigns?dm=<token>` — lista con links de DM/jugador. Misma regla: sin token de DM válido → 403 (los links de DM no pueden quedar expuestos a cualquiera que abra la home). La web guarda el token de DM en `localStorage` (`ttrpg:dmToken`) al entrar como DM y lo manda solo.
+- `POST /api/campaigns` — crea campaña. Libre para tráfico local o con `dm` (token de DM de una campaña existente) en el body.
+- `GET /api/campaigns?dm=<token>` — lista con links de DM/jugador. Misma regla.
+- **Regla de acceso local-vs-túnel**: `_can_manage_campaigns` permite si el request es local **o** trae token de DM válido. "Local" = sin headers `Cf-Connecting-Ip`/`Cf-Ray`: el edge de Cloudflare siempre los agrega (y pisa los del cliente) en el tráfico del túnel, así que su ausencia garantiza conexión directa (el DM en su PC, o su LAN). La IP origen no discrimina: cloudflared conecta desde 127.0.0.1 igual que un navegador local. Así la home del DM siempre funciona en su máquina aunque no tenga el token guardado, y un jugador que abra la home por el túnel recibe 403. La web además guarda el token de DM en `localStorage` (`ttrpg:dmToken`) al entrar como DM, por si el DM entra por el link público.
 - `DELETE /api/campaigns/<dm_token>` — borra la campaña en cascada (escenas, objetos, personajes/variantes, assets **y sus archivos**, tokens de acceso, pilas de undo) y cierra la sala (WS `4409`). Solo con el token de DM de esa campaña.
 
 ### Uploads

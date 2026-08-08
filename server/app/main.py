@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -34,6 +34,23 @@ class CreateCampaign(BaseModel):
 def _is_dm_token(token: str) -> bool:
     resolved = state.resolve_token(token) if token else None
     return resolved is not None and resolved[1] == "dm"
+
+
+def _is_local_request(request: Request) -> bool:
+    """True si el request NO vino por el túnel de Cloudflare.
+
+    El edge de Cloudflare siempre agrega headers Cf-* (y pisa los que pueda
+    mandar el cliente), así que su ausencia garantiza tráfico directo: el DM
+    en su PC (o alguien de su red local, que ya es confianza física).
+    La IP origen no sirve para discriminar: cloudflared conecta desde
+    127.0.0.1 igual que un navegador local.
+    """
+    return "cf-connecting-ip" not in request.headers and "cf-ray" not in request.headers
+
+
+def _can_manage_campaigns(request: Request, dm_token: str) -> bool:
+    """Administrar campañas: tráfico local (el DM en su PC) o token de DM."""
+    return _is_local_request(request) or _is_dm_token(dm_token)
 
 
 @asynccontextmanager
@@ -65,10 +82,10 @@ def create_app() -> FastAPI:
 
     # ---- REST: campañas y acceso -----------------------------------------
     @app.post("/api/campaigns")
-    async def create_campaign(body: CreateCampaign):
-        # La primera campaña del server es libre (bootstrap); después hay que
-        # probar que ya sos DM (evita que cualquier jugador cree campañas).
-        if state.campaigns and not _is_dm_token(body.dm):
+    async def create_campaign(request: Request, body: CreateCampaign):
+        # Libre para tráfico local (el DM en su PC) o con token de DM;
+        # por el túnel (jugadores) solo con token de DM de una campaña previa.
+        if state.campaigns and not _can_manage_campaigns(request, body.dm):
             raise HTTPException(status_code=403, detail="solo el DM puede crear campañas")
         campaign_id = uuid.uuid4().hex
         dm_token = secrets.token_urlsafe(16)
@@ -103,16 +120,17 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/campaigns")
-    async def list_campaigns(dm: str = Query(default="")):
+    async def list_campaigns(request: Request, dm: str = Query(default="")):
         """Lista de campañas existentes (para reabrir sin crear una nueva).
 
-        Incluye los links de DM: exige un token de DM válido si ya hay
-        campañas (los jugadores no pueden ver esta lista).
+        Incluye los links de DM: solo visible desde tráfico local (el DM en
+        su PC) o con un token de DM válido — los jugadores que abran la home
+        por el túnel reciben 403.
         """
         campaigns = sorted(
             state.campaigns.values(), key=lambda c: c.created_at, reverse=True
         )
-        if campaigns and not _is_dm_token(dm):
+        if campaigns and not _can_manage_campaigns(request, dm):
             raise HTTPException(
                 status_code=403, detail="solo el DM puede listar las campañas"
             )

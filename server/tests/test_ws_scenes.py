@@ -262,6 +262,60 @@ def test_scene_switch_to_missing_scene_is_rejected(client, campaign):
         assert "tok1" in state.objects
 
 
+def test_undo_remove_after_switch_does_not_resurrect_on_new_scene(client, campaign):
+    """La inversa de un remove solo recrea el objeto si la escena original
+    sigue activa; si el DM cambió de escena, se descarta (no resucita en la
+    escena nueva)."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        snap = dm.receive_json()
+        scene1 = snap["scene"]["id"]
+        dm.receive_json()
+        dm.receive_json()
+
+        dm.send_json({"type": "token.add", "opId": "1", "payload": {"id": "tok-x", "data": {"x": 0, "y": 0}}})
+        _drain_until(dm, "op")
+        dm.send_json({"type": "token.remove", "opId": "2", "payload": {"id": "tok-x"}})
+        _drain_until(dm, "op")
+        assert "tok-x" not in state.objects
+
+        dm.send_json({"type": "scene.create", "opId": "3", "payload": {"id": "s2", "name": "Otra"}})
+        _drain_until(dm, "scene.update")
+        dm.send_json({"type": "scene.switch", "opId": "4", "payload": {"sceneId": "s2"}})
+        _drain_until(dm, "scene.snapshot")
+
+        # undo del remove: la escena original (scene1) ya no es la activa
+        dm.send_json({"type": "undo", "opId": "5", "payload": {}})
+        assert "tok-x" not in state.objects  # no resucita en s2
+
+        # tampoco se broadcastea una recreación; la conexión sigue sana
+        dm.send_json({"type": "token.add", "opId": "6", "payload": {"id": "tok-alive", "data": {}}})
+        msg = _drain_until(dm, "op")
+        assert msg["op"]["payload"]["id"] == "tok-alive"
+
+
+def test_undo_remove_same_scene_still_recreates(client, campaign):
+    """Control: sin cambio de escena, deshacer un borrado sí lo recrea."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        snap = dm.receive_json()
+        scene1 = snap["scene"]["id"]
+        dm.receive_json()
+        dm.receive_json()
+
+        dm.send_json({"type": "token.add", "opId": "1", "payload": {"id": "tok-y", "data": {"x": 3, "y": 4}}})
+        _drain_until(dm, "op")
+        dm.send_json({"type": "token.remove", "opId": "2", "payload": {"id": "tok-y"}})
+        _drain_until(dm, "op")
+        dm.send_json({"type": "undo", "opId": "3", "payload": {}})
+        msg = _drain_until(dm, "op")
+        assert msg["op"]["type"] == "token.add"
+        assert msg["op"]["payload"]["id"] == "tok-y"
+        assert state.objects["tok-y"].scene_id == scene1
+
+
 def test_duplicate_broadcasts_as_add(client, campaign):
     with client.websocket_connect(
         f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"

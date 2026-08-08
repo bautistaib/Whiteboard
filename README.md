@@ -98,7 +98,7 @@ La URL es aleatoria y cambia en cada arranque, y encima lleva el token de jugado
 Sí: editá `docker-compose.yml` con el Bloc de notas, descomentá las dos líneas de `environment` / `TUNNEL=off` y volvé a correr `empezar.bat`. Los jugadores tendrán que estar en tu red y entrar por tu IP local.
 
 **¿Se perdió el link de DM?**
-Abrí una terminal en la carpeta y corré:
+Abrí `http://localhost:8000` en la PC donde corre el server: la lista de campañas siempre se ve desde ahí (las visitas por el link público no la ven). Si no tenés acceso a esa PC, abrí una terminal en la carpeta y corré:
 
 ```
 docker compose exec ttrpg-board python -c "import sqlite3; print('\n'.join('http://localhost:8000/dm/' + r[0] for r in sqlite3.connect('/data/ttrpg.db').execute('select dm_token from campaigns')))"

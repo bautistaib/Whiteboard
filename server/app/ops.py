@@ -256,6 +256,9 @@ def compute_inverse(
             "payload": {
                 "id": obj.id,
                 "z_index": obj.z_index,
+                # escena donde se borró: si el DM cambió de escena, la
+                # recreación se descarta (no resucita en la escena activa)
+                "scene_id": obj.scene_id,
                 "data": json.loads(obj.data_json),
             },
         }
@@ -318,7 +321,12 @@ def apply_inverse(
         return True
 
     if action == "add":
-        # recrear objeto borrado (idempotente por uuid del cliente)
+        # recrear objeto borrado (idempotente por uuid del cliente).
+        # Solo si seguimos en la escena donde se borró: las demás ramas
+        # descartan cuando el objeto no es de la escena activa; acá no hay
+        # objeto que chequear, así que manda el scene_id registrado.
+        if payload.get("scene_id") != scene.id:
+            return False
         apply(state, scene, client_id, op_type, payload)
         return True
 
