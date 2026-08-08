@@ -19,9 +19,14 @@ export function objectBounds(o: SceneObj, cellSize: number): Bounds {
   const y = d.y ?? 0;
   if (o.type === "token") {
     const half = ((d.size_cells ?? 1) * cellSize) / 2;
-    return { minX: x - half, minY: y - half, maxX: x + half, maxY: y + half };
+    return {
+      minX: x - half * (d.scaleX ?? 1),
+      minY: y - half * (d.scaleY ?? 1),
+      maxX: x + half * (d.scaleX ?? 1),
+      maxY: y + half * (d.scaleY ?? 1),
+    };
   }
-  // scaleX/scaleY del nodo (resize libre) — los tokens no escalan
+  // scaleX/scaleY del nodo (resize libre)
   const sx = d.scaleX ?? 1;
   const sy = d.scaleY ?? 1;
   if (o.type === "path") {
