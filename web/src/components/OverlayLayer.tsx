@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import Konva from "konva";
 import { Arrow, Circle, Ellipse, Group, Label, Layer, Line, Rect, Tag, Text, Wedge } from "react-konva";
 import { gridFromConfig } from "../grid";
+import { dashPattern, withAlpha } from "../draw/style";
 import { useStore, type PingInfo, type Tool } from "../store";
 
 export interface Preview {
@@ -26,17 +27,30 @@ export default function OverlayLayer({
   const gridConfig = useStore((s) => s.grid);
   const drawColor = useStore((s) => s.drawColor);
   const drawWidth = useStore((s) => s.drawWidth);
+  const drawOpacity = useStore((s) => s.drawOpacity);
+  const drawLineStyle = useStore((s) => s.drawLineStyle);
+  const shapeFill = useStore((s) => s.shapeFill);
+  const markerColor = useStore((s) => s.markerColor);
+  const markerWidth = useStore((s) => s.markerWidth);
+  const markerOpacity = useStore((s) => s.markerOpacity);
 
   const grid = gridFromConfig(gridConfig);
+
+  // dash del preview (lápiz y formas; el marcador nunca dashea)
+  const previewDash = drawLineStyle === "dash" ? dashPattern(drawWidth) : undefined;
+  // relleno translúcido del preview de rect/circle
+  const previewFill = shapeFill ? withAlpha(drawColor, 0.25 * drawOpacity) : undefined;
 
   return (
     <Layer listening={false}>
       {/* preview de dibujo en curso */}
-      {preview?.tool === "pencil" && preview.points && (
+      {preview && (preview.tool === "pencil" || preview.tool === "marker") && preview.points && (
         <Line
           points={preview.points}
-          stroke={drawColor}
-          strokeWidth={drawWidth}
+          stroke={preview.tool === "marker" ? markerColor : drawColor}
+          strokeWidth={preview.tool === "marker" ? markerWidth : drawWidth}
+          opacity={preview.tool === "marker" ? markerOpacity : drawOpacity}
+          dash={preview.tool === "pencil" ? previewDash : undefined}
           lineCap="round"
           lineJoin="round"
           tension={0.4}
@@ -52,6 +66,9 @@ export default function OverlayLayer({
               height={Math.abs(preview.current.y - preview.start.y)}
               stroke={drawColor}
               strokeWidth={drawWidth}
+              opacity={drawOpacity}
+              dash={previewDash}
+              fill={previewFill}
             />
           ) : (
             <Ellipse
@@ -61,6 +78,9 @@ export default function OverlayLayer({
               radiusY={Math.abs(preview.current.y - preview.start.y) / 2}
               stroke={drawColor}
               strokeWidth={drawWidth}
+              opacity={drawOpacity}
+              dash={previewDash}
+              fill={previewFill}
             />
           )}
         </>
@@ -71,6 +91,8 @@ export default function OverlayLayer({
           stroke={drawColor}
           fill={drawColor}
           strokeWidth={drawWidth}
+          opacity={drawOpacity}
+          dash={previewDash}
           pointerLength={preview.tool === "arrow" ? 12 : 0}
           pointerWidth={preview.tool === "arrow" ? 10 : 0}
         />
