@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Layer, Shape } from "react-konva";
 import { gridFromConfig, HexGrid } from "../grid";
 import { useStore } from "../store";
+import { registerNode } from "./nodeRegistry";
 
 /** Grilla: dibuja solo el viewport visible. No escucha eventos (perf). */
 export default function GridLayer({ width, height }: { width: number; height: number }) {
@@ -18,7 +19,8 @@ export default function GridLayer({ width, height }: { width: number; height: nu
   const y1 = y0 + height / camera.scale;
 
   return (
-    <Layer listening={false}>
+    // registrada como "grid": el balde de pintura la oculta al capturar el canvas
+    <Layer listening={false} ref={(n) => registerNode("grid", n)}>
       <Shape
         // strokeShape usa el stroke DEL SHAPE (no del contexto): configurarlo acá
         stroke={gridConfig.color}

@@ -18,7 +18,7 @@ import OverlayLayer, { type Preview } from "./OverlayLayer";
 import SelectionTransformer from "./SelectionTransformer";
 import TokenContextMenu from "./TokenContextMenu";
 import TokenLayer from "./TokenLayer";
-import { registerNode } from "./nodeRegistry";
+import { getNode, registerNode } from "./nodeRegistry";
 import { objectBounds } from "./objectBounds";
 
 interface Point {
@@ -228,7 +228,12 @@ export default function Board() {
       const stage = stageRef.current;
       const p = stage?.getPointerPosition();
       if (!stage || !p) return;
-      const shot = stage.toCanvas({ pixelRatio: 1 });
+      // la grilla no participa del fill: las líneas están todas conectadas y
+      // click en una inundaría la red entera (además de acotar celdas)
+      const gridLayer = getNode("grid");
+      gridLayer?.visible(false);
+      const shot = stage.toCanvas({ pixelRatio: 1 }); // sync: no hay repintado entre hide/show
+      gridLayer?.visible(true);
       const ctx = shot.getContext("2d");
       if (!ctx) return;
       const img = ctx.getImageData(0, 0, shot.width, shot.height);
