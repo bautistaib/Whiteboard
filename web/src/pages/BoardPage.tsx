@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Board from "../components/Board";
 import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
@@ -6,6 +6,7 @@ import Toolbar from "../components/Toolbar";
 import TunnelBanner from "../components/TunnelBanner";
 import { gridFromConfig } from "../grid";
 import { useStore, type Tool } from "../store";
+import { getTheme, setTheme, type Theme } from "../theme";
 import { wsClient } from "../ws";
 
 const TOOL_KEYS: Record<string, Tool> = {
@@ -94,6 +95,7 @@ export default function BoardPage() {
             🔗 Link
           </button>
         )}
+        <ThemeToggle />
         <span className={`conn ${connected ? "ok" : "off"}`}>
           {connected ? "conectado" : "reconectando…"}
         </span>
@@ -105,6 +107,25 @@ export default function BoardPage() {
         <LibraryPanel />
       </div>
     </div>
+  );
+}
+
+/** Toggle de tema claro/oscuro (preferencia local, persistida en localStorage). */
+function ThemeToggle() {
+  const [theme, setThemeState] = useState<Theme>(getTheme());
+  const toggle = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    setThemeState(next);
+  };
+  return (
+    <button
+      className="mini"
+      title={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+      onClick={toggle}
+    >
+      {theme === "dark" ? "☀" : "🌙"}
+    </button>
   );
 }
 
