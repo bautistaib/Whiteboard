@@ -62,9 +62,48 @@ function initialMarkerOpacity(): number {
   return Number.isFinite(n) && n >= 0.1 && n <= 1 ? n : 0.45;
 }
 
+function initialBool(key: string, def: boolean): boolean {
+  const v = lsGet(key);
+  return v === null ? def : v === "1";
+}
+
+function initialAdvancedMode(): boolean {
+  return initialBool("ttrpg:advancedMode", false);
+}
+
+function initialStabilizer(): number {
+  const n = Number(lsGet("ttrpg:stabilizer"));
+  return Number.isFinite(n) && n >= 0 && n <= 0.9 ? n : 0;
+}
+
+function initialPressureWidth(): boolean {
+  return initialBool("ttrpg:pressureWidth", false);
+}
+
+function initialBlendMode(): BlendMode {
+  const v = lsGet("ttrpg:blendMode");
+  return v === "multiply" || v === "screen" ? v : "normal";
+}
+
+function initialSymmetry(): SymmetryMode {
+  const v = lsGet("ttrpg:symmetry");
+  return v === "mirror" || v === "quad" ? v : "off";
+}
+
+function initialFillTolerance(): number {
+  const n = Number(lsGet("ttrpg:fillTolerance"));
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 32;
+}
+
 export type Role = "dm" | "player";
 
 export type LineStyle = "solid" | "dash";
+
+/** Modo de mezcla al renderizar (globalCompositeOperation de Konva). */
+export type BlendMode = "normal" | "multiply" | "screen";
+
+/** Simetría al crear trazos: espejo vertical (viewport) o cuádruple. */
+export type SymmetryMode = "off" | "mirror" | "quad";
 
 export interface SceneObj {
   id: string;
@@ -124,6 +163,8 @@ export type Tool =
   | "pan"
   | "pencil"
   | "marker"
+  | "spray"
+  | "fill"
   | "rect"
   | "circle"
   | "line"
@@ -193,6 +234,16 @@ interface BoardState {
   markerColor: string;
   markerWidth: number;
   markerOpacity: number;
+  /** modo avanzado de dibujo: muestra herramientas/opciones extra */
+  advancedMode: boolean;
+  /** fuerza del estabilizador de trazo (0 = apagado) */
+  stabilizer: number;
+  /** ancho variable por presión (stylus) o velocidad (mouse) */
+  pressureWidth: boolean;
+  blendMode: BlendMode;
+  symmetry: SymmetryMode;
+  /** tolerancia del balde de pintura (0–100) */
+  fillTolerance: number;
   /** apertura del cono AoE (grados) */
   aoeAngle: number;
   selection: string[];
@@ -232,6 +283,12 @@ interface BoardState {
   setMarkerColor: (c: string) => void;
   setMarkerWidth: (w: number) => void;
   setMarkerOpacity: (o: number) => void;
+  setAdvancedMode: (v: boolean) => void;
+  setStabilizer: (v: number) => void;
+  setPressureWidth: (v: boolean) => void;
+  setBlendMode: (v: BlendMode) => void;
+  setSymmetry: (v: SymmetryMode) => void;
+  setFillTolerance: (v: number) => void;
   setAoeAngle: (a: number) => void;
   setSelection: (ids: string[]) => void;
   toggleSelected: (id: string) => void;
@@ -282,6 +339,12 @@ export const useStore = create<BoardState>((set, get) => ({
   markerColor: initialMarkerColor(),
   markerWidth: initialMarkerWidth(),
   markerOpacity: initialMarkerOpacity(),
+  advancedMode: initialAdvancedMode(),
+  stabilizer: initialStabilizer(),
+  pressureWidth: initialPressureWidth(),
+  blendMode: initialBlendMode(),
+  symmetry: initialSymmetry(),
+  fillTolerance: initialFillTolerance(),
   aoeAngle: 60,
   selection: [],
   contextMenu: null,
@@ -317,6 +380,14 @@ export const useStore = create<BoardState>((set, get) => ({
 
   applyServerOp: (op) => {
     const { type, payload } = op;
+    // batch: aplica sub-ops en orden (una sola entrada de undo en el server)
+    if (type === "batch") {
+      const subs: { type: string; payload: any }[] = payload?.ops ?? [];
+      for (const sub of subs) {
+        get().applyServerOp({ ...sub, author: op.author, clientId: op.clientId });
+      }
+      return;
+    }
     const dot = type.indexOf(".");
     if (dot < 0) return;
     const action = type.slice(dot + 1);
@@ -329,6 +400,7 @@ export const useStore = create<BoardState>((set, get) => ({
           : type.startsWith("shape") ? "shape"
           : type.startsWith("text") ? "text"
           : type.startsWith("group") ? "group"
+          : type.startsWith("image") ? "image"
           : "aoe";
         objects[payload.id] = {
           id: payload.id,
@@ -435,6 +507,30 @@ export const useStore = create<BoardState>((set, get) => ({
   setMarkerOpacity: (o) => {
     lsSet("ttrpg:markerOpacity", String(o));
     set({ markerOpacity: o });
+  },
+  setAdvancedMode: (v) => {
+    lsSet("ttrpg:advancedMode", v ? "1" : "0");
+    set({ advancedMode: v });
+  },
+  setStabilizer: (v) => {
+    lsSet("ttrpg:stabilizer", String(v));
+    set({ stabilizer: v });
+  },
+  setPressureWidth: (v) => {
+    lsSet("ttrpg:pressureWidth", v ? "1" : "0");
+    set({ pressureWidth: v });
+  },
+  setBlendMode: (v) => {
+    lsSet("ttrpg:blendMode", v);
+    set({ blendMode: v });
+  },
+  setSymmetry: (v) => {
+    lsSet("ttrpg:symmetry", v);
+    set({ symmetry: v });
+  },
+  setFillTolerance: (v) => {
+    lsSet("ttrpg:fillTolerance", String(v));
+    set({ fillTolerance: v });
   },
   setAoeAngle: (a) => set({ aoeAngle: a }),
 

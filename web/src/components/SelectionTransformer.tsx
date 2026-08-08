@@ -8,7 +8,7 @@ import { canModifyObject } from "./DrawLayer";
 import { getNode } from "./nodeRegistry";
 
 /** Tipos con transformer (resize + rotación). Los tokens también rotan de a 90° por menú contextual. */
-const TRANSFORMABLE = new Set(["aoe", "shape", "text", "path", "token", "group"]);
+const TRANSFORMABLE = new Set(["aoe", "shape", "text", "path", "token", "group", "image"]);
 
 /**
  * Handle de transformación sobre el objeto seleccionado (selección simple,

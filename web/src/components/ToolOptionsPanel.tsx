@@ -6,6 +6,8 @@ import { lsGet, lsSet, useStore, type Tool } from "../store";
 export const TOOLS_WITH_OPTIONS: Tool[] = [
   "pencil",
   "marker",
+  "spray",
+  "fill",
   "rect",
   "circle",
   "line",
@@ -42,6 +44,8 @@ const MAX_PRESETS = 24;
 const TOOL_NAMES: Partial<Record<Tool, string>> = {
   pencil: "Lápiz",
   marker: "Resaltador",
+  spray: "Spray",
+  fill: "Balde de pintura",
   rect: "Rectángulo",
   circle: "Círculo",
   line: "Línea",
@@ -54,7 +58,7 @@ const TOOL_NAMES: Partial<Record<Tool, string>> = {
 };
 
 /** Herramientas con preview de trazo (línea recta para line/arrow, curva para el resto). */
-const PREVIEW_TOOLS: Tool[] = ["pencil", "marker", "rect", "circle", "line", "arrow"];
+const PREVIEW_TOOLS: Tool[] = ["pencil", "marker", "spray", "rect", "circle", "line", "arrow"];
 
 /** Presets de color guardados; fallback a los swatches por defecto. */
 function loadPresets(): string[] {
@@ -100,6 +104,17 @@ export default function ToolOptionsPanel() {
   const setMarkerOpacity = useStore((s) => s.setMarkerOpacity);
   const aoeAngle = useStore((s) => s.aoeAngle);
   const setAoeAngle = useStore((s) => s.setAoeAngle);
+  const advancedMode = useStore((s) => s.advancedMode);
+  const stabilizer = useStore((s) => s.stabilizer);
+  const setStabilizer = useStore((s) => s.setStabilizer);
+  const pressureWidth = useStore((s) => s.pressureWidth);
+  const setPressureWidth = useStore((s) => s.setPressureWidth);
+  const blendMode = useStore((s) => s.blendMode);
+  const setBlendMode = useStore((s) => s.setBlendMode);
+  const symmetry = useStore((s) => s.symmetry);
+  const setSymmetry = useStore((s) => s.setSymmetry);
+  const fillTolerance = useStore((s) => s.fillTolerance);
+  const setFillTolerance = useStore((s) => s.setFillTolerance);
   const [presets, setPresets] = useState<string[]>(loadPresets);
 
   const savePresets = (next: string[]) => {
@@ -130,11 +145,16 @@ export default function ToolOptionsPanel() {
   if (!open) return null;
 
   const isEraser = tool === "eraser";
+  const isFill = tool === "fill";
   const hasPreview = PREVIEW_TOOLS.includes(tool);
-  const hasOpacity = hasPreview; // pencil, marker, rect, circle, line, arrow
-  const hasLineStyle = hasPreview && !isMarker;
+  const hasOpacity = hasPreview || isFill; // pencil, marker, spray, fill, rect, circle, line, arrow
+  const hasLineStyle = hasPreview && !isMarker && tool !== "spray";
   const hasFill = tool === "rect" || tool === "circle";
   const hasColor = !isEraser;
+  // secciones del modo avanzado
+  const hasStabilizer = tool === "pencil" || tool === "marker";
+  const hasBlend = ["pencil", "marker", "spray", "rect", "circle", "line", "arrow"].includes(tool);
+  const hasSymmetry = symmetry !== "off" || tool === "pencil" || tool === "marker" || tool === "spray";
   const straightPreview = tool === "line" || tool === "arrow";
   // grosor del preview capado para que entre en la tira de 28px
   const previewWidth = Math.max(1.5, Math.min(width, 16));
@@ -203,9 +223,11 @@ export default function ToolOptionsPanel() {
           </div>
         </>
       )}
-      {isEraser ? (
-        <>
-          <div className="tool-options-label">Tamaño</div>
+      {/* el balde no tiene grosor: solo color, opacidad y tolerancia */}
+      {!isFill &&
+        (isEraser ? (
+          <>
+            <div className="tool-options-label">Tamaño</div>
           <label className="width-row">
             <input
               type="range"
@@ -246,7 +268,7 @@ export default function ToolOptionsPanel() {
             ))}
           </div>
         </>
-      )}
+      ))}
       {hasOpacity && (
         <>
           <div className="tool-options-label">Opacidad</div>
@@ -291,6 +313,100 @@ export default function ToolOptionsPanel() {
           />
           Relleno
         </label>
+      )}
+      {isFill && advancedMode && (
+        <>
+          <div className="tool-options-label">Tolerancia</div>
+          <label className="width-row">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={fillTolerance}
+              onChange={(e) => setFillTolerance(Number(e.target.value))}
+            />
+            <span className="muted small">{fillTolerance}</span>
+          </label>
+        </>
+      )}
+      {advancedMode && hasStabilizer && (
+        <>
+          <div className="tool-options-label">Estabilizador</div>
+          <label className="width-row">
+            <input
+              type="range"
+              min={0}
+              max={0.9}
+              step={0.05}
+              value={stabilizer}
+              onChange={(e) => setStabilizer(Number(e.target.value))}
+            />
+            <span className="muted small">{Math.round(stabilizer * 100)}%</span>
+          </label>
+        </>
+      )}
+      {advancedMode && tool === "pencil" && (
+        <label className="fill-row">
+          <input
+            type="checkbox"
+            checked={pressureWidth}
+            onChange={(e) => setPressureWidth(e.target.checked)}
+          />
+          Ancho por presión/velocidad
+        </label>
+      )}
+      {advancedMode && hasBlend && (
+        <>
+          <div className="tool-options-label">Mezcla</div>
+          <div className="style-toggles">
+            <button
+              className={`style-toggle ${blendMode === "normal" ? "active" : ""}`}
+              onClick={() => setBlendMode("normal")}
+            >
+              Normal
+            </button>
+            <button
+              className={`style-toggle ${blendMode === "multiply" ? "active" : ""}`}
+              onClick={() => setBlendMode("multiply")}
+            >
+              Multiplicar
+            </button>
+            <button
+              className={`style-toggle ${blendMode === "screen" ? "active" : ""}`}
+              onClick={() => setBlendMode("screen")}
+            >
+              Pantalla
+            </button>
+          </div>
+        </>
+      )}
+      {advancedMode && hasSymmetry && (
+        <>
+          <div className="tool-options-label">Simetría</div>
+          <div className="style-toggles">
+            <button
+              className={`style-toggle ${symmetry === "off" ? "active" : ""}`}
+              onClick={() => setSymmetry("off")}
+            >
+              No
+            </button>
+            <button
+              className={`style-toggle ${symmetry === "mirror" ? "active" : ""}`}
+              onClick={() => setSymmetry("mirror")}
+            >
+              Espejo
+            </button>
+            <button
+              className={`style-toggle ${symmetry === "quad" ? "active" : ""}`}
+              onClick={() => setSymmetry("quad")}
+            >
+              Cuádruple
+            </button>
+          </div>
+        </>
+      )}
+      {!advancedMode && tool === "pencil" && (
+        <div className="tool-options-hint">🎨 Activá el modo avanzado para más opciones</div>
       )}
       {tool === "aoe-cone" && (
         <>

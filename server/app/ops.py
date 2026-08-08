@@ -1,7 +1,9 @@
 """Operaciones del whiteboard: validación, aplicación al estado e inversas.
 
 Wire format (cliente→server): {"type": "token.move", "opId": "<uuid>", "payload": {...}}
+Batch (cliente→server):     {"type": "batch", "opId": "<uuid>", "payload": {"ops": [...]}}
 Broadcast (server→cliente):  {"type": "op", "op": {...campos + author, seq}}
+(el batch se broadcastea como UNA op "batch" con las sub-ops originales)
 
 Semántica de undo (spec): las inversas se aplican como ops nuevas broadcasteadas;
 best-effort ante conflictos (objeto ausente → descartar; last-writer-wins).
@@ -25,7 +27,15 @@ OBJECT_TYPES: dict[str, str] = {
     "text": "text",
     "aoe": "aoe",
     "group": "group",
+    "image": "image",
 }
+
+# Tamaño máximo del payload JSON de una op (single o batch): 256 KB.
+# Se mide sobre el payload COMPLETO del mensaje entrante, no por sub-op.
+MAX_PAYLOAD_BYTES = 256 * 1024
+
+# Límite de sub-ops por batch (spec cliente: 1–16).
+MAX_BATCH_OPS = 16
 
 SCENE_OPS = {"switch", "create", "rename", "setGrid", "setBackground", "delete"}
 EPHEMERAL_OPS = {"cursor.move", "ping", "camera.sync", "presence.rename"}
@@ -41,6 +51,12 @@ def split_op(op_type: str) -> tuple[str, str]:
     if "." not in op_type:
         raise OpError(f"tipo de op inválido: {op_type}")
     return tuple(op_type.split(".", 1))  # type: ignore[return-value]
+
+
+def check_payload_size(payload: Any) -> None:
+    """Rechaza ops cuyo payload serializado supera MAX_PAYLOAD_BYTES."""
+    if len(json.dumps(payload).encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        raise OpError("payload demasiado grande (máx 256 KB)")
 
 
 # ---- validación de permisos ----------------------------------------------
@@ -334,6 +350,84 @@ def apply_inverse(
     raise OpError(f"inversa desconocida: {op_type}")
 
 
+# ---- batches -----------------------------------------------------------------
+
+
+def apply_batch(
+    state: AppState,
+    role: Role,
+    client_id: str,
+    scene: db.Scene,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Valida y aplica un batch de sub-ops EN ORDEN. Devuelve la inversa (batch).
+
+    Atómico: si alguna sub-op falla la validación, se revierte lo ya aplicado
+    y se rechaza el batch entero (el llamador no apila undo ni broadcastea).
+    """
+    sub_ops = payload.get("ops")
+    if not isinstance(sub_ops, list) or not 1 <= len(sub_ops) <= MAX_BATCH_OPS:
+        raise OpError(f"batch requiere entre 1 y {MAX_BATCH_OPS} sub-ops")
+
+    # Chequeo estructural previo (sin tocar estado): sub-ops bien formadas,
+    # solo ops persistidas de objetos, sin batches anidados.
+    for sub in sub_ops:
+        if not isinstance(sub, dict) or not isinstance(sub.get("type"), str):
+            raise OpError("sub-op de batch inválida")
+        if not isinstance(sub.get("payload"), dict):
+            raise OpError(f"sub-op sin payload: {sub.get('type')}")
+        sub_type: str = sub["type"]
+        if sub_type == "batch":
+            raise OpError("no se permiten batches anidados")
+        prefix, _action = split_op(sub_type)  # raise si no tiene '.'
+        if prefix not in OBJECT_TYPES:
+            raise OpError(f"op no admitida en batch: {sub_type}")
+
+    # Interleave: validar → computar inversa → aplicar, con el estado
+    # evolucionando entre sub-ops (remove-then-add del mismo id funciona).
+    done: list[dict[str, Any]] = []  # inversas de lo ya aplicado (rollback)
+    try:
+        for sub in sub_ops:
+            validate(state, role, client_id, scene, sub["type"], sub["payload"])
+            inv = compute_inverse(state, scene, sub["type"], sub["payload"])
+            apply(state, scene, client_id, sub["type"], sub["payload"])
+            assert inv is not None  # op de objeto ya validada siempre tiene inversa
+            done.append(inv)
+    except OpError:
+        for inv in reversed(done):
+            apply_inverse(state, scene, client_id, inv)
+        raise
+    # La inversa del batch es un batch de las sub-inversas en orden inverso.
+    return {"type": "batch", "payload": {"ops": list(reversed(done))}}
+
+
+def apply_batch_inverse(
+    state: AppState,
+    scene: db.Scene,
+    client_id: str,
+    sub_inverses: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, bool]:
+    """Aplica las sub-inversas de un batch en orden (camino de undo/redo).
+
+    Computa cada re-inversa contra el estado evolucionado y devuelve la
+    re-inversa del batch (sub-inversas en orden inverso). Si alguna se
+    descarta (objeto ausente, per spec), se revierte lo aplicado y el batch
+    entero se descarta: (None, False).
+    """
+    done: list[dict[str, Any]] = []  # re-inversas de lo ya aplicado (rollback)
+    re_invs: list[dict[str, Any]] = []
+    for inv in sub_inverses:
+        re_inv = compute_inverse(state, scene, inv["type"], inv["payload"])
+        if not apply_inverse(state, scene, client_id, inv):
+            for r in reversed(done):
+                apply_inverse(state, scene, client_id, r)
+            return None, False
+        if re_inv is not None:
+            re_invs.append(re_inv)
+            done.append(re_inv)
+    return {"type": "batch", "payload": {"ops": list(reversed(re_invs))}}, True
+
+
 def undo_step(
     state: AppState,
     scene: db.Scene,
@@ -359,11 +453,18 @@ def undo_step(
         if inverse is None:
             return None
 
-        re_inverse = compute_inverse(state, scene, inverse["type"], inverse["payload"])
-        try:
-            applied = apply_inverse(state, scene, client_id, inverse)
-        except OpError:
-            applied = False
+        if inverse["type"] == "batch":
+            # La re-inversa de un batch solo se puede computar contra el
+            # estado evolucionando: apply_batch_inverse intercala ambas cosas.
+            re_inverse, applied = apply_batch_inverse(
+                state, scene, client_id, inverse["payload"]["ops"]
+            )
+        else:
+            re_inverse = compute_inverse(state, scene, inverse["type"], inverse["payload"])
+            try:
+                applied = apply_inverse(state, scene, client_id, inverse)
+            except OpError:
+                applied = False
         if not applied:
             log.info("inversa descartada (%s de %s): %s", kind, client_id, inverse)
             continue

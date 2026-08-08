@@ -42,8 +42,9 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG por Discord, self-
 - El fondo queda en su propia capa, no seleccionable por jugadores.
 
 ### 6. Dibujo
-- Lápiz a mano alzada (color, grosor), formas (rectángulo, círculo, línea, flecha), texto.
-- Borrador y selección/eliminación de objetos propios (el DM borra cualquiera).
+- Lápiz a mano alzada (color, grosor, opacidad, trazo punteado), resaltador, formas (rectángulo, círculo, línea, flecha, con relleno opcional), texto.
+- **Modo avanzado** (opt-in por usuario): estabilizador de trazo, ancho por presión (stylus) o velocidad (mouse), spray, balde de pintura (rasteriza el relleno como objeto `image` en la capa de dibujos), modos de mezcla (multiplicar/pantalla), simetría espejo/cuádruple, cuentagotas (Alt+click), restricciones con Shift.
+- Borrador (tamaño propio) y selección/eliminación de objetos propios (el DM borra cualquiera). El borrado parcial es una sola operación de undo (op `batch`).
 - Capas fijas, de abajo hacia arriba: **fondo → grilla → dibujos → tokens**.
 - Los dibujos persisten con la escena (los que dibujan su personaje pueden guardarlo como asset: "convertir dibujo en token").
 
@@ -92,6 +93,7 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG por Discord, self-
 - **Optimistic updates** solo para el drag propio (fluidez); el resto espera confirmación del server.
 - Al conectar o reconectar, el cliente recibe un **snapshot completo** de la escena activa y de ahí en más aplica deltas. Nada de CRDTs: para <10 usuarios con server autoritativo es complejidad innecesaria.
 - Throttle de eventos de drag (~30 Hz) con posición final garantizada al soltar.
+- Los trazos se mandan **al soltar** (un op por trazo; no hay streaming en progreso). Existe una op compuesta `batch` (1–16 sub-ops, atómica, una sola entrada de undo) para borrado parcial y simetría. Límite de 256 KB por payload.
 
 ### Modelo de datos (SQLite)
 ```
@@ -100,7 +102,7 @@ scenes(id, campaign_id, name, background_asset_id, grid_config_json, is_active, 
 assets(id, campaign_id, filename, kind[token|map|other], uploaded_by, created_at)
 characters(id, campaign_id, name)
 character_variants(id, character_id, asset_id, label, size_cells, sort_order)
-objects(id, scene_id, type[token|path|shape|text|aoe|group], z_index, owner, data_json, updated_at)
+objects(id, scene_id, type[token|path|shape|text|aoe|group|image], z_index, owner, data_json, updated_at)
 ```
 - Un token con formas guarda `character_id` + `active_variant_id` en su `data_json`.
 - Un `group` es un dibujo compuesto: su `data_json` guarda `parts` (lista de {type, data} de paths/shapes/textos con coords relativas al origen del grupo). Se crea con "Fusionar selección".

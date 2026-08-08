@@ -1,9 +1,13 @@
 import type Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Layer, Stage } from "react-konva";
+import { uploadImage } from "../api";
+import { floodFillMask, maskToPngBlob } from "../draw/fill";
+import { smoothPressure, strokeWidths } from "../draw/ink";
 import { simplifyRdp } from "../draw/simplify";
+import { MAX_SPRAY_POINTS, sprayAlong } from "../draw/spray";
 import { gridFromConfig } from "../grid";
-import { useStore, type SceneObj } from "../store";
+import { useStore, type SceneObj, type Tool } from "../store";
 import { sendThrottled, wsClient } from "../ws";
 import AoELayer from "./AoELayer";
 import BackgroundLayer from "./BackgroundLayer";
@@ -20,6 +24,34 @@ import { objectBounds } from "./objectBounds";
 interface Point {
   x: number;
   y: number;
+}
+
+/** El preview del spray lleva también el radio de cada dot (OverlayLayer lo lee). */
+type SprayPreview = Preview & { widths?: number[] };
+
+/** Herramientas con las que Alt+click actúa como cuentagotas. */
+const EYEDROP_TOOLS: Tool[] = ["pencil", "marker", "spray", "rect", "circle", "line", "arrow", "fill"];
+
+/**
+ * Índices de punto de `raw` que sobrevivieron en `kept`: los puntos que
+ * devuelve el RDP son copias exactas (float) de los crudos, así que se
+ * matchean por valor con un scan lineal desde el último hallazgo.
+ */
+function keptPointIndices(raw: number[], kept: number[]): number[] {
+  const out: number[] = [];
+  let j = 0; // offset (en valores) de raw desde donde seguir buscando
+  for (let i = 0; i < kept.length; i += 2) {
+    let found = -1;
+    for (let k = j; k < raw.length; k += 2) {
+      if (raw[k] === kept[i] && raw[k + 1] === kept[i + 1]) {
+        found = k / 2;
+        j = k + 2;
+        break;
+      }
+    }
+    out.push(found >= 0 ? found : (out[out.length - 1] ?? 0));
+  }
+  return out;
 }
 
 export default function Board() {
@@ -62,6 +94,15 @@ export default function Board() {
   const eraseStroke = useRef<Point[] | null>(null);
   // medición solo mientras el botón está apretado
   const measureDragging = useRef(false);
+  // estabilizador: posición suavizada del pincel durante el trazo activo
+  const brushPos = useRef<Point | null>(null);
+  // muestras de presión crudas, una por punto capturado (lápiz + pressureWidth;
+  // vacío = muestreo apagado)
+  const pressureSamples = useRef<number[]>([]);
+  // radios por dot del spray en curso (paralelo a preview.points)
+  const sprayWidths = useRef<number[]>([]);
+  // última posición desde la que se sembró spray
+  const sprayLast = useRef<Point | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -132,7 +173,124 @@ export default function Board() {
     return id;
   };
 
-  const onMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+  /**
+   * Presión del puntero: real si el PointerEvent la reporta (stylus/touch;
+   * el mouse reporta 0.5 con botón apretado → no es presión real). Con mouse
+   * se simula por velocidad: p = clamp(12 / (speed + 12), 0.15, 1), donde
+   * speed = distancia desde la última muestra (en unidades de mundo).
+   */
+  const samplePressure = (e: Konva.KonvaEventObject<PointerEvent>, from: Point, to: Point): number => {
+    const pe = e.evt;
+    if (pe.pointerType !== "mouse" && pe.pressure > 0) {
+      return Math.min(1, Math.max(0, pe.pressure));
+    }
+    const speed = Math.hypot(to.x - from.x, to.y - from.y);
+    return Math.min(1, Math.max(0.15, 12 / (speed + 12)));
+  };
+
+  /** Restricción con Shift: línea/flecha a ángulos de 45°; rect/circle con w = h. */
+  const shiftConstrain = (start: Point, cur: Point, t: Tool): Point => {
+    const dx = cur.x - start.x;
+    const dy = cur.y - start.y;
+    if (t === "line" || t === "arrow") {
+      const len = Math.hypot(dx, dy);
+      const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+      return { x: start.x + len * Math.cos(ang), y: start.y + len * Math.sin(ang) };
+    }
+    const s = Math.max(Math.abs(dx), Math.abs(dy));
+    return { x: start.x + Math.sign(dx || 1) * s, y: start.y + Math.sign(dy || 1) * s };
+  };
+
+  /** Cuentagotas (Alt+click): samplea el píxel del canvas compuesto y fija el color. */
+  const tryEyedrop = (): boolean => {
+    if (!EYEDROP_TOOLS.includes(tool)) return false;
+    const stage = stageRef.current;
+    const p = stage?.getPointerPosition();
+    if (!stage || !p) return false;
+    try {
+      const ctx = stage.toCanvas({ pixelRatio: 1 }).getContext("2d");
+      if (!ctx) return true;
+      const d = ctx.getImageData(Math.round(p.x), Math.round(p.y), 1, 1).data;
+      if (d[3] === 0) return true; // píxel transparente: ignorar
+      const hex = `#${((1 << 24) | (d[0] << 16) | (d[1] << 8) | d[2]).toString(16).slice(1)}`;
+      const st = useStore.getState();
+      if (tool === "marker") st.setMarkerColor(hex);
+      else st.setDrawColor(hex);
+    } catch (err) {
+      console.warn("cuentagotas falló:", err);
+    }
+    return true; // nunca iniciar trazo/forma/fill con Alt apretado
+  };
+
+  /** Balde de pintura: flood fill sobre el canvas compuesto → asset + image.add. */
+  const runFill = async () => {
+    try {
+      const stage = stageRef.current;
+      const p = stage?.getPointerPosition();
+      if (!stage || !p) return;
+      const shot = stage.toCanvas({ pixelRatio: 1 });
+      const ctx = shot.getContext("2d");
+      if (!ctx) return;
+      const img = ctx.getImageData(0, 0, shot.width, shot.height);
+      const st = useStore.getState();
+      const mask = floodFillMask(img, Math.round(p.x), Math.round(p.y), st.fillTolerance);
+      if (!mask) return;
+      // la opacidad se hornea en el PNG; data.opacity queda en su default
+      const out = await maskToPngBlob(mask, img.width, img.height, st.drawColor, st.drawOpacity);
+      if (!out || out.count < 100) return; // área ínfima: probablemente misclick
+      // kind "map": conserva el tamaño (≤4096 px) y la recompresión WebP mantiene alfa
+      const up = await uploadImage(st.token, out.blob, {
+        kind: "map",
+        name: "relleno",
+        filename: "relleno.png",
+      });
+      const scale = stage.scaleX();
+      const data = {
+        url: `/assets/${up.filename}`,
+        x: (out.offsetX - stage.x()) / scale,
+        y: (out.offsetY - stage.y()) / scale,
+        w: out.width / scale,
+        h: out.height / scale,
+      };
+      const id = optimisticAdd("image", data);
+      wsClient.send("image.add", { id, data });
+    } catch (err) {
+      // el fill nunca debe romper el board
+      console.warn("fill falló:", err);
+    }
+  };
+
+  /**
+   * Envía un trazo libre (pencil/marker/spray) aplicando simetría: el eje es
+   * la vertical (y la horizontal, en "quad") que pasa por el centro del
+   * viewport en coords de mundo. Con copias se manda UN "batch" de draw.add
+   * (una sola entrada de undo); widths/blend/opacity/dash se copian igual.
+   */
+  const sendPath = (data: Record<string, any>) => {
+    const symmetry = useStore.getState().symmetry;
+    if (symmetry === "off") {
+      const id = optimisticAdd("path", data);
+      wsClient.send("draw.add", { id, data });
+      return;
+    }
+    const stage = stageRef.current!;
+    const cx = (stage.width() / 2 - stage.x()) / stage.scaleX();
+    const cy = (stage.height() / 2 - stage.y()) / stage.scaleY();
+    const pts: number[] = data.points;
+    const flipX = pts.map((v, i) => (i % 2 === 0 ? 2 * cx - v : v));
+    const flipY = (arr: number[]) => arr.map((v, i) => (i % 2 === 1 ? 2 * cy - v : v));
+    const variants =
+      symmetry === "mirror" ? [pts, flipX] : [pts, flipX, flipY(pts), flipY(flipX)];
+    const ops: { type: string; payload: Record<string, any> }[] = [];
+    for (const vpts of variants) {
+      const d = { ...data, points: vpts };
+      const id = optimisticAdd("path", d);
+      ops.push({ type: "draw.add", payload: { id, data: d } });
+    }
+    wsClient.send("batch", { ops });
+  };
+
+  const onPointerDown = (e: Konva.KonvaEventObject<PointerEvent>) => {
     setContextMenu(null);
     if (e.evt.button === 0) setToolOptionsOpen(false); // cerrar panel de opciones al dibujar
     const pos = worldPos();
@@ -157,6 +315,9 @@ export default function Board() {
     }
     if (e.evt.button !== 0) return;
 
+    // Alt+click con herramienta de dibujo → cuentagotas (no inicia nada)
+    if (e.evt.altKey && tryEyedrop()) return;
+
     if (tool === "select" && isEmptyTarget(e)) {
       setSelRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
       return;
@@ -168,7 +329,23 @@ export default function Board() {
       return;
     }
     if (tool === "pencil" || tool === "marker") {
+      brushPos.current = pos;
+      pressureSamples.current = [];
+      if (tool === "pencil" && useStore.getState().pressureWidth) {
+        pressureSamples.current.push(samplePressure(e, pos, pos));
+      }
       setPreview({ tool, start: pos, current: pos, points: [pos.x, pos.y] });
+      return;
+    }
+    if (tool === "spray") {
+      // los dots se siembran en el move; un click sin arrastre es un cluster
+      sprayWidths.current = [];
+      sprayLast.current = pos;
+      setPreview({ tool, start: pos, current: pos, points: [] });
+      return;
+    }
+    if (tool === "fill") {
+      void runFill(); // click-only: sin preview de arrastre
       return;
     }
     if (tool === "rect" || tool === "circle" || tool === "line" || tool === "arrow") {
@@ -195,7 +372,7 @@ export default function Board() {
     }
   };
 
-  const onMouseMove = () => {
+  const onPointerMove = (e: Konva.KonvaEventObject<PointerEvent>) => {
     // pan con click derecho
     if (rightPan.current) {
       const p = stageRef.current!.getPointerPosition();
@@ -225,16 +402,61 @@ export default function Board() {
     }
     if (preview) {
       if (preview.tool === "pencil" || preview.tool === "marker") {
+        // estabilizador: el pincel persigue al puntero con un factor (1 - s)
+        const stab = useStore.getState().stabilizer;
+        let drawPos = pos;
+        if (stab > 0 && brushPos.current) {
+          brushPos.current = {
+            x: brushPos.current.x + (pos.x - brushPos.current.x) * (1 - stab),
+            y: brushPos.current.y + (pos.y - brushPos.current.y) * (1 - stab),
+          };
+          drawPos = brushPos.current;
+        }
         const pts = preview.points ?? [];
         // adelgazado en captura: densidad ~constante en px de pantalla
         const minDist = Math.max(1.5, 2 / camera.scale);
-        const dx = pos.x - pts[pts.length - 2];
-        const dy = pos.y - pts[pts.length - 1];
+        const dx = drawPos.x - pts[pts.length - 2];
+        const dy = drawPos.y - pts[pts.length - 1];
         if (dx * dx + dy * dy >= minDist * minDist) {
-          setPreview({ ...preview, current: pos, points: [...pts, pos.x, pos.y] });
+          if (pressureSamples.current.length > 0) {
+            const last = { x: pts[pts.length - 2], y: pts[pts.length - 1] };
+            pressureSamples.current.push(samplePressure(e, last, drawPos));
+          }
+          setPreview({ ...preview, current: pos, points: [...pts, drawPos.x, drawPos.y] });
         }
+      } else if (preview.tool === "spray") {
+        const st = useStore.getState();
+        const last = sprayLast.current ?? pos;
+        let pts = preview.points ?? [];
+        // siembra dots hasta el techo; después el preview sigue el puntero
+        const room = MAX_SPRAY_POINTS - sprayWidths.current.length;
+        if (room > 0) {
+          const seg = sprayAlong(last.x, last.y, pos.x, pos.y, st.drawWidth);
+          const take = Math.min(room, seg.widths.length);
+          if (take > 0) {
+            pts = [...pts, ...seg.points.slice(0, take * 2)];
+            sprayWidths.current = [...sprayWidths.current, ...seg.widths.slice(0, take)];
+          }
+        }
+        sprayLast.current = pos;
+        const next: SprayPreview = {
+          ...preview,
+          current: pos,
+          points: pts,
+          widths: sprayWidths.current,
+        };
+        setPreview(next);
       } else {
-        setPreview({ ...preview, current: pos });
+        // Shift: cuadrado/círculo perfecto, líneas a 45°
+        const cur =
+          (preview.tool === "rect" ||
+            preview.tool === "circle" ||
+            preview.tool === "line" ||
+            preview.tool === "arrow") &&
+          e.evt.shiftKey
+            ? shiftConstrain(preview.start, pos, preview.tool)
+            : pos;
+        setPreview({ ...preview, current: cur });
       }
       return;
     }
@@ -244,7 +466,7 @@ export default function Board() {
     }
   };
 
-  const onMouseUp = () => {
+  const onPointerUp = (e: Konva.KonvaEventObject<PointerEvent>) => {
     measureDragging.current = false;
     if (rightPan.current) {
       rightPan.current = null;
@@ -260,7 +482,24 @@ export default function Board() {
       return;
     }
     if (!preview) return;
-    finishPreview(preview);
+    let final = preview;
+    // con estabilizador el pincel queda atrás: cerrar el trazo donde el
+    // usuario levantó el puntero (posición cruda, antes del RDP)
+    if (
+      (preview.tool === "pencil" || preview.tool === "marker") &&
+      useStore.getState().stabilizer > 0 &&
+      stageRef.current?.getPointerPosition()
+    ) {
+      const pos = worldPos();
+      const pts = preview.points ?? [];
+      if (pressureSamples.current.length > 0 && pts.length >= 2) {
+        const last = { x: pts[pts.length - 2], y: pts[pts.length - 1] };
+        pressureSamples.current.push(samplePressure(e, last, pos));
+      }
+      final = { ...preview, current: pos, points: [...pts, pos.x, pos.y] };
+    }
+    brushPos.current = null;
+    finishPreview(final);
     setPreview(null);
   };
 
@@ -274,6 +513,9 @@ export default function Board() {
     const radius = st.eraserWidth / st.camera.scale;
     const clientId = st.clientId;
     const isDm = st.role === "dm";
+    // todo el borrado se manda como "batch" (1–16 sub-ops por batch, una
+    // sola entrada de undo); los cambios locales son optimistas como siempre
+    const ops: { type: string; payload: Record<string, any> }[] = [];
 
     for (const obj of Object.values(st.objects)) {
       if (obj.type !== "path") continue;
@@ -299,44 +541,79 @@ export default function Board() {
         return { x: rx / sx, y: ry / sy };
       });
 
-      // runs de puntos que sobreviven; el radio del borrador también pasa a
-      // local (escala distinta por eje → test elíptico)
+      // el radio del borrador también pasa a local (escala distinta por eje
+      // → test elíptico)
       const er = radius + halfWidth;
       const erx = er / sx;
       const ery = er / sy;
-      const runs: number[][] = [];
-      let current: number[] = [];
-      for (let i = 0; i < pts.length; i += 2) {
-        const px = pts[i];
-        const py = pts[i + 1];
-        let erased = false;
+      const isErased = (px: number, py: number): boolean => {
         for (const p of localStroke) {
           const ddx = p.x - px;
           const ddy = p.y - py;
-          if ((ddx * ddx) / (erx * erx) + (ddy * ddy) / (ery * ery) < 1) {
-            erased = true;
-            break;
+          if ((ddx * ddx) / (erx * erx) + (ddy * ddy) / (ery * ery) < 1) return true;
+        }
+        return false;
+      };
+
+      // spray: se borran los DOTS bajo el cursor (no hay runs que cortar)
+      if (obj.data.spray) {
+        const keptPts: number[] = [];
+        const keptW: number[] = [];
+        for (let i = 0; i < pts.length; i += 2) {
+          if (!isErased(pts[i], pts[i + 1])) {
+            keptPts.push(pts[i], pts[i + 1]);
+            if (obj.data.widths) keptW.push(obj.data.widths[i / 2]);
           }
         }
-        if (erased) {
-          if (current.length >= 4) runs.push(current);
+        if (keptPts.length === pts.length) continue; // no se tocó
+        st.removeObjectLocal(obj.id);
+        ops.push({ type: "draw.remove", payload: { id: obj.id } });
+        if (keptPts.length >= 2) {
+          const data = {
+            ...obj.data,
+            points: keptPts,
+            ...(obj.data.widths ? { widths: keptW } : {}),
+          };
+          const newId = optimisticAdd("path", data);
+          ops.push({ type: "draw.add", payload: { id: newId, data } });
+        }
+        continue;
+      }
+
+      // runs de puntos que sobreviven
+      const widths: number[] | undefined = obj.data.widths;
+      const runs: number[][] = [];
+      const widthRuns: number[][] = [];
+      let current: number[] = [];
+      let currentW: number[] = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        if (isErased(pts[i], pts[i + 1])) {
+          if (current.length >= 4) {
+            runs.push(current);
+            widthRuns.push(currentW);
+          }
           current = [];
+          currentW = [];
         } else {
           current.push(pts[i], pts[i + 1]);
+          if (widths) currentW.push(widths[i / 2]);
         }
       }
-      if (current.length >= 4) runs.push(current);
+      if (current.length >= 4) {
+        runs.push(current);
+        widthRuns.push(currentW);
+      }
 
       const totalKept = runs.reduce((n, r) => n + r.length, 0);
       if (totalKept === pts.length) continue; // no se tocó
 
       st.removeObjectLocal(obj.id);
-      wsClient.send("draw.remove", { id: obj.id });
-      for (const run of runs) {
+      ops.push({ type: "draw.remove", payload: { id: obj.id } });
+      for (let ri = 0; ri < runs.length; ri++) {
         const data = {
           x: ox,
           y: oy,
-          points: run,
+          points: runs[ri],
           color: obj.data.color,
           width: obj.data.width,
           rotation: rot,
@@ -345,10 +622,17 @@ export default function Board() {
           // heredar estilo del trazo original
           ...(obj.data.opacity != null ? { opacity: obj.data.opacity } : {}),
           ...(obj.data.dash ? { dash: true } : {}),
+          ...(obj.data.blend ? { blend: obj.data.blend } : {}),
+          ...(widths ? { widths: widthRuns[ri] } : {}),
         };
         const newId = optimisticAdd("path", data);
-        wsClient.send("draw.add", { id: newId, data });
+        ops.push({ type: "draw.add", payload: { id: newId, data } });
       }
+    }
+
+    // el server valida batches de 1–16 sub-ops: trocear si hace falta
+    for (let i = 0; i < ops.length; i += 16) {
+      wsClient.send("batch", { ops: ops.slice(i, i + 16) });
     }
   };
 
@@ -378,11 +662,13 @@ export default function Board() {
     const dx = p.current.x - p.start.x;
     const dy = p.current.y - p.start.y;
     const distPx = Math.hypot(dx, dy);
+    const blendMode = useStore.getState().blendMode;
 
     // estilo opcional de formas (se omite cuando es el default)
     const style: Record<string, any> = {};
     if (drawOpacity < 1) style.opacity = drawOpacity;
     if (drawLineStyle === "dash") style.dash = true;
+    if (blendMode !== "normal") style.blend = blendMode;
 
     if (p.tool === "pencil" || p.tool === "marker") {
       const raw = p.points ?? [];
@@ -403,8 +689,62 @@ export default function Board() {
         };
         if (opacity < 1) data.opacity = opacity;
         if (!isMarker && drawLineStyle === "dash") data.dash = true; // el marcador nunca dashea
-        const id = optimisticAdd("path", data);
-        wsClient.send("draw.add", { id, data });
+        if (blendMode !== "normal") data.blend = blendMode;
+        // ancho variable (solo lápiz): widths alineados a los puntos FINALES
+        // (post-RDP) vía los índices crudos que sobrevivieron
+        const samples = pressureSamples.current;
+        pressureSamples.current = [];
+        if (!isMarker && useStore.getState().pressureWidth && points.length / 2 <= 4000) {
+          let lo = Infinity;
+          let hi = -Infinity;
+          for (const s of samples) {
+            if (s < lo) lo = s;
+            if (s > hi) hi = s;
+          }
+          if (samples.length >= 3 && samples.length === raw.length / 2 && hi - lo > 0.01) {
+            const smoothed = smoothPressure(samples);
+            const kept = keptPointIndices(raw, points);
+            data.widths = strokeWidths(
+              points,
+              drawWidth,
+              kept.map((ki) => smoothed[ki]),
+            );
+          }
+        }
+        sendPath(data);
+      }
+      return;
+    }
+
+    if (p.tool === "spray") {
+      let pts = p.points ?? [];
+      let ws = sprayWidths.current;
+      sprayWidths.current = [];
+      sprayLast.current = null;
+      if (ws.length === 0) {
+        // click sin arrastre: cluster de ~8 dots alrededor del click
+        pts = [];
+        ws = [];
+        for (let i = 0; i < 8; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const rr = drawWidth * Math.sqrt(Math.random());
+          pts.push(p.start.x + rr * Math.cos(ang), p.start.y + rr * Math.sin(ang));
+          ws.push(drawWidth * (0.15 + Math.random() * 0.25));
+        }
+      }
+      if (pts.length >= 2) {
+        const data: Record<string, any> = {
+          x: 0,
+          y: 0,
+          points: pts,
+          widths: ws,
+          color: drawColor,
+          width: drawWidth,
+          spray: true,
+        };
+        if (drawOpacity < 1) data.opacity = drawOpacity;
+        if (blendMode !== "normal") data.blend = blendMode;
+        sendPath(data);
       }
       return;
     }
@@ -592,10 +932,10 @@ export default function Board() {
         draggable={tool === "pan" && !textEdit}
         onDragEnd={onStageDragEnd}
         onWheel={onWheel}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMoveOrEnd}
         onTouchEnd={onTouchMoveOrEnd}

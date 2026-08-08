@@ -316,9 +316,15 @@ async def dispatch(
 
     # ---- ops normales -----------------------------------------------------
     try:
-        ops.validate(state, conn.role, conn.client_id, scene, op_type, payload)
-        inverse = ops.compute_inverse(state, scene, op_type, payload)
-        ops.apply(state, scene, conn.client_id, op_type, payload)
+        ops.check_payload_size(payload)
+        if op_type == "batch":
+            # Valida+aplica las sub-ops en orden (atómico) y devuelve la
+            # inversa del batch, que fluye por el undo como una op más.
+            inverse = ops.apply_batch(state, conn.role, conn.client_id, scene, payload)
+        else:
+            ops.validate(state, conn.role, conn.client_id, scene, op_type, payload)
+            inverse = ops.compute_inverse(state, scene, op_type, payload)
+            ops.apply(state, scene, conn.client_id, op_type, payload)
     except ops.OpError as exc:
         await send(conn, {"type": "error", "opId": op_id, "reason": str(exc)})
         return

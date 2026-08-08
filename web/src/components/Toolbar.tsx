@@ -6,11 +6,13 @@ import CalibrationPanel from "./CalibrationPanel";
 import { getNode } from "./nodeRegistry";
 import ToolOptionsPanel, { TOOLS_WITH_OPTIONS } from "./ToolOptionsPanel";
 
-export const TOOLS: { id: Tool; label: string; icon: string; key: string }[] = [
+export const TOOLS: { id: Tool; label: string; icon: string; key: string; advanced?: boolean }[] = [
   { id: "select", label: "Seleccionar / mover", icon: "⬚", key: "V" },
   { id: "pan", label: "Mover cámara", icon: "✋", key: "H" },
   { id: "pencil", label: "Lápiz", icon: "✏️", key: "P" },
   { id: "marker", label: "Resaltador", icon: "🖊", key: "N" },
+  { id: "spray", label: "Spray", icon: "💨", key: "S", advanced: true },
+  { id: "fill", label: "Balde de pintura", icon: "🪣", key: "F", advanced: true },
   { id: "rect", label: "Rectángulo", icon: "▭", key: "R" },
   { id: "circle", label: "Círculo", icon: "◯", key: "O" },
   { id: "line", label: "Línea", icon: "╱", key: "L" },
@@ -31,13 +33,16 @@ export default function Toolbar() {
   const setFollowDm = useStore((s) => s.setFollowDm);
   const toolOptionsOpen = useStore((s) => s.toolOptionsOpen);
   const setToolOptionsOpen = useStore((s) => s.setToolOptionsOpen);
+  const advancedMode = useStore((s) => s.advancedMode);
+  const setAdvancedMode = useStore((s) => s.setAdvancedMode);
   const [showGrid, setShowGrid] = useState(false);
 
   const hasOptions = TOOLS_WITH_OPTIONS.includes(tool);
 
   return (
     <div className="toolbar">
-      {TOOLS.map((t) => (
+      {/* las herramientas avanzadas solo aparecen con el modo avanzado activo */}
+      {TOOLS.filter((t) => !t.advanced || advancedMode).map((t) => (
         <button
           key={t.id}
           title={`${t.label} (${t.key})`}
@@ -57,6 +62,13 @@ export default function Toolbar() {
           ⚙
         </button>
       )}
+      <button
+        className={`tool ${advancedMode ? "active" : ""}`}
+        title="Modo avanzado de dibujo"
+        onClick={() => setAdvancedMode(!advancedMode)}
+      >
+        🎨
+      </button>
       <div className="tool-sep" />
       <button className="tool" title="Deshacer (Ctrl+Z)" onClick={() => wsClient.send("undo")}>
         ↩

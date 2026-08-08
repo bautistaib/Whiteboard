@@ -83,6 +83,10 @@ Objetos (persisten, entran al undo):
 | `text.add/update/remove` | | |
 | `aoe.add/update/remove` | | circle/cone/line, size_cells, rotation |
 | `group.add/update/remove` | | dibujo compuesto (Fusionar selección); `update` mueve/transforma el grupo entero |
+| `image.add/update/remove` | | imagen pegada en la capa de dibujos (resultado del balde de pintura); data: url, x, y, w, h |
+| `batch` | `{ops: [{type, payload}, ...]}` | 1–16 sub-ops de objetos, validación atómica (todo o nada), UNA entrada de undo; se broadcastea como una sola op `batch`. Sin batches anidados |
+
+Límite de tamaño: el server rechaza cualquier op cuyo payload JSON supere **256 KB** (`MAX_PAYLOAD_BYTES` en `ops.py`).
 
 Escena (solo DM, no entran al undo): `scene.switch/create/rename/delete/setGrid/setBackground`. `switch` manda snapshot fresco a toda la sala; el resto manda `scene.update`. `delete` borra la escena con sus objetos; no permite borrar la escena activa ni la última. `switch`/`rename`/`delete` a una escena inexistente se rechazan con error limpio (no tumban la conexión).
 
@@ -96,12 +100,22 @@ Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync
 - **Jugador**: dibuja, crea tokens, sube a la biblioteca. Mueve/modifica **sus** objetos; tokens ajenos solo si la escena tiene `playersMoveAny` (toggle del DM en la config de grilla). Borra solo objetos propios. No toca escenas ni la cámara de otros.
 - La validación está en `ops.validate()`; el cliente además oculta/deshabilita lo prohibido, pero el server es la autoridad.
 
+### Heurísticas para features de dibujo (leer antes de agregar herramientas)
+
+- **Un op por trazo terminado**: no hay streaming de trazos en progreso — el cliente dibuja un preview local y manda `draw.add` recién al soltar. El requisito de sync (<200 ms) aplica al trazo completo.
+- **`data_json` es verbatim**: el server guarda el JSON sin validar campos → agregar campos por trazo es gratis del lado del server; el costo real está en el render del cliente. Convención: campos opcionales **omitidos cuando tienen el valor default** (`opacity`, `dash`, `filled`, `blend`, `widths`, `spray`) → compatibilidad con escenas y clientes viejos.
+- **Renderizar como nodo Konva = gratis todo lo demás**: selección, Transformer, export PNG y "convertir en token" funcionan para cualquier cosa que sea un nodo Konva registrado.
+- **Tocar la geometría de `path` tiene costos ocultos**: hay que actualizar render (DrawLayer + GroupPart), `objectBounds.ts` y el borrador parcial (transform a coords locales + split en segmentos). Ejemplo: `widths` (ancho variable) se rebana por índice de punto al dividir en runs.
+- **Caps de payload** (defensa ante herramientas que generan muchos datos): 256 KB por op (server), 3000 dots por trazo de spray (`MAX_SPRAY_POINTS`), 16 sub-ops por batch, 4000 puntos máx. para ancho variable.
+- **Clasificación de cambios por costo**: *input-side* (procesar el puntero antes de generar puntos: estabilizador, shift-snap — no tocan nada más) < *render-side* (flags que solo cambian cómo se dibuja: `opacity`, `blend`, `dash`) < *geometry-side* (cambian el modelo de puntos: `widths`, `spray`).
+
 ### Interacciones del canvas (patrones de UX)
 
 - **Pan**: arrastre con click derecho sobre canvas vacío (cualquier herramienta), herramienta ✋, o rueda para zoom. El menú contextual sigue siendo click derecho *sobre un objeto*.
 - **Altas optimistas**: draw/shape/text/aoe/token se insertan en el store local al crear (uuid del cliente); el eco del broadcast los pisa con el mismo id → sin flash.
 - **Texto**: click con la herramienta T abre un `<textarea>` inline sobre el canvas (Enter confirma, Esc cancela, blur confirma); doble click en un texto existente lo edita (`text.update`).
-- **Borrador**: click simple = borrar objeto entero; arrastre = borrado parcial de trazos (los puntos del path bajo el cursor se eliminan y el path se divide en segmentos: un `draw.remove` + un `draw.add` por segmento). `eraseFlag.ts` evita que el click posterior al arrastre borre el objeto entero por accidente. Tiene su propio tamaño (`eraserWidth`, 2–64), independiente del grosor de dibujo.
+- **Borrador**: click simple = borrar objeto entero; arrastre = borrado parcial de trazos (los puntos del path bajo el cursor se eliminan y el path se divide en segmentos). Todo el borrado parcial se manda como **un `batch`** (remove + adds, troceado de a 16 si hay muchos segmentos) → un solo Ctrl+Z lo deshace. En trazos `spray` se borran dots individuales (sin split); en trazos con `widths` cada segmento hereda su rebanada de `widths`. `eraseFlag.ts` evita que el click posterior al arrastre borre el objeto entero por accidente. Tiene su propio tamaño (`eraserWidth`, 2–64), independiente del grosor de dibujo.
+- **Modo avanzado de dibujo** (toggle 🎨 en la toolbar, `advancedMode`): habilita las herramientas **spray** (S) y **balde de pintura** (F) y secciones extra del panel: **estabilizador** (el pincel persigue al puntero con factor 1−s; input-side, no cambia el modelo), **ancho por presión/velocidad** (presión real de stylus vía PointerEvent; con mouse se simula por velocidad; guarda `widths` por punto y renderiza polígono cónico — `draw/ink.ts`), **mezcla** (`blend`: multiply/screen → `globalCompositeOperation`), **simetría** (espejo/cuádruple sobre el centro del viewport; las copias se mandan como un `batch` de `draw.add`), **tolerancia** del balde. El **balde** flood-fillea el canvas compuesto del stage (`draw/fill.ts`), sube el PNG recortado como asset (kind "map") y lo coloca como objeto `image` en la capa de dibujos. **Cuentagotas**: Alt+click con cualquier herramienta de dibujo fija el color sampleando el canvas. **Shift** restringe formas: línea/flecha a 45°, rect/circle a cuadrado/círculo perfecto.
 - **Opciones de herramienta**: panel contextual (`ToolOptionsPanel`) con secciones por herramienta: color, grosor, opacidad (0.1–1), trazo sólido/punteado (`drawLineStyle`) y relleno (`shapeFill`, solo rect/circle), con preview SVG del trazo arriba. El **resaltador** (marker) es una herramienta aparte con sus propios `markerColor`/`markerWidth`/`markerOpacity`. Todos los valores se persisten en localStorage (claves `ttrpg:*`). En los datos del trazo, los campos `opacity`/`dash`/`filled` se omiten cuando tienen el valor por defecto.
 - **Puntos del lápiz**: durante el trazo se descartan puntos por distancia mínima (thinning) y al soltar se simplifica el polyline con Ramer-Douglas-Peucker (`draw/simplify.ts`), así los paths persistidos quedan livianos.
 - **Permisos por defecto**: `playersMoveAny` default `true` (cualquiera mueve cualquier token); el DM lo restringe desde el panel de grilla.

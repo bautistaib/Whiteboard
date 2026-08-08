@@ -13,6 +13,8 @@ import { wsClient } from "../ws";
 const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
   TOOLS.map((t) => [t.key.toLowerCase(), t.id]),
 );
+// herramientas solo disponibles con el modo avanzado (sus hotkeys se ignoran si está apagado)
+const ADVANCED_TOOLS = new Set<Tool>(TOOLS.filter((t) => t.advanced).map((t) => t.id));
 
 export default function BoardPage() {
   const token = useStore((s) => s.token);
@@ -65,7 +67,7 @@ export default function BoardPage() {
         wsClient.send("scene.switch", { sceneId: st.previousSceneId });
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         const t = TOOL_KEYS[e.key.toLowerCase()];
-        if (t) st.setTool(t);
+        if (t && (!ADVANCED_TOOLS.has(t) || st.advancedMode)) st.setTool(t);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -177,6 +179,8 @@ export function prefixOf(objType: string): string {
       return "text";
     case "group":
       return "group";
+    case "image":
+      return "image";
     default:
       return "aoe";
   }

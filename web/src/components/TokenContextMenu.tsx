@@ -8,7 +8,7 @@ import { getNode } from "./nodeRegistry";
 import { objectBounds } from "./objectBounds";
 
 // tipos que se pueden fusionar en un dibujo compuesto (group)
-const MERGEABLE = new Set(["path", "shape", "text", "group"]);
+const MERGEABLE = new Set(["path", "shape", "text", "group", "image"]);
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

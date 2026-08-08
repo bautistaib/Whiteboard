@@ -46,7 +46,24 @@ export function objectBounds(o: SceneObj, cellSize: number): Bounds {
       maxY = Math.max(maxY, py);
     }
     if (!Number.isFinite(minX)) return { minX: x, minY: y, maxX: x, maxY: y };
+    // trazos de ancho variable / spray: inflar por el radio máximo
+    const ws: number[] | undefined = d.widths;
+    if (ws?.length) {
+      const pad = Math.max(...ws) / 2;
+      return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+    }
     return { minX, minY, maxX, maxY };
+  }
+  if (o.type === "image") {
+    // bbox desde x/y/w/h (como rect)
+    const w = (d.w ?? 0) * sx;
+    const h = (d.h ?? 0) * sy;
+    return {
+      minX: Math.min(x, x + w),
+      minY: Math.min(y, y + h),
+      maxX: Math.max(x, x + w),
+      maxY: Math.max(y, y + h),
+    };
   }
   if (o.type === "shape") {
     if (d.shape === "rect") {

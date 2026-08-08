@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import Konva from "konva";
-import { Arrow, Circle, Ellipse, Group, Label, Layer, Line, Rect, Tag, Text, Wedge } from "react-konva";
+import { Arrow, Circle, Ellipse, Group, Label, Layer, Line, Rect, Shape, Tag, Text, Wedge } from "react-konva";
 import { gridFromConfig } from "../grid";
 import { dashPattern, withAlpha } from "../draw/style";
 import { useStore, type PingInfo, type Tool } from "../store";
@@ -10,6 +10,8 @@ export interface Preview {
   start: { x: number; y: number };
   current: { x: number; y: number };
   points?: number[];
+  /** spray: radio por dot (mismo largo que points/2) */
+  widths?: number[];
 }
 
 /** Capa overlay (no persiste): preview de dibujo, selección, medición, cursores, pings. */
@@ -54,6 +56,25 @@ export default function OverlayLayer({
           lineCap="round"
           lineJoin="round"
           tension={0.4}
+        />
+      )}
+      {preview && preview.tool === "spray" && preview.points && (
+        <Shape
+          sceneFunc={(ctx, shape) => {
+            const pts = preview.points!;
+            const ws = preview.widths;
+            // si el preview aún no trae widths, fallback a un radio fijo
+            const fallback = Math.max(0.5, drawWidth * 0.2);
+            ctx.beginPath();
+            for (let i = 0; i + 1 < pts.length; i += 2) {
+              const r = ws?.[i / 2] ?? fallback;
+              ctx.moveTo(pts[i] + r, pts[i + 1]);
+              ctx.arc(pts[i], pts[i + 1], r, 0, Math.PI * 2);
+            }
+            ctx.fillShape(shape);
+          }}
+          fill={drawColor}
+          opacity={drawOpacity}
         />
       )}
       {preview && (preview.tool === "rect" || preview.tool === "circle") && (

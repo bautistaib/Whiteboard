@@ -1,6 +1,6 @@
 import type Konva from "konva";
-import { useRef } from "react";
-import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Text } from "react-konva";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Arrow, Circle, Ellipse, Group, Image as KImage, Layer, Line, Rect, Shape, Text } from "react-konva";
 import { dashPattern, withAlpha } from "../draw/style";
 import { sortedObjects, useStore, type Role, type SceneObj } from "../store";
 import { sendThrottled, wsClient } from "../ws";
@@ -8,6 +8,158 @@ import { prefixOf } from "../pages/BoardPage";
 import { eraseJustDragged } from "./eraseFlag";
 import { registerNode } from "./nodeRegistry";
 import { objectBounds } from "./objectBounds";
+
+/** Mezcla canvas: solo multiply/screen; el resto es source-over. */
+function blendOp(blend: unknown): GlobalCompositeOperation {
+  return blend === "multiply" || blend === "screen" ? blend : "source-over";
+}
+
+/** cache de imágenes por URL (mismo patrón que useAssetImage, pero con path completo) */
+const urlImgCache = new Map<string, HTMLImageElement>();
+
+function useUrlImage(url: string | undefined): HTMLImageElement | null {
+  const [img, setImg] = useState<HTMLImageElement | null>(url ? urlImgCache.get(url) ?? null : null);
+  useEffect(() => {
+    if (!url) {
+      setImg(null);
+      return;
+    }
+    const cached = urlImgCache.get(url);
+    if (cached) {
+      setImg(cached);
+      return;
+    }
+    const el = new Image();
+    el.src = url;
+    el.onload = () => {
+      urlImgCache.set(url, el);
+      setImg(el);
+    };
+    return () => {
+      el.onload = null;
+    };
+  }, [url]);
+  return img;
+}
+
+/**
+ * Polígono que bordea un trazo de ancho variable: lado izquierdo hacia
+ * adelante + lado derecho hacia atrás, usando la normal de cada punto
+ * (dirección centrada entre vecinos) ± widths[i]/2.
+ */
+function taperedStrokePolygon(pts: number[], widths: number[]): number[] {
+  const n = Math.min(widths.length, pts.length / 2);
+  const out: number[] = [];
+  const right: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 2];
+    const y = pts[i * 2 + 1];
+    const pi = Math.max(0, i - 1) * 2;
+    const ni = Math.min(n - 1, i + 1) * 2;
+    let dx = pts[ni] - pts[pi];
+    let dy = pts[ni + 1] - pts[pi + 1];
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    const half = widths[i] / 2;
+    out.push(x - dy * half, y + dx * half);
+    right.push(x + dy * half, y - dx * half);
+  }
+  for (let i = right.length - 2; i >= 0; i -= 2) out.push(right[i], right[i + 1]);
+  return out;
+}
+
+function tracePolygon(ctx: Konva.Context, poly: number[]) {
+  ctx.beginPath();
+  ctx.moveTo(poly[0], poly[1]);
+  for (let i = 2; i < poly.length; i += 2) ctx.lineTo(poly[i], poly[i + 1]);
+  ctx.closePath();
+}
+
+/** Un círculo relleno por punto, con radio widths[i]. */
+function traceSpray(ctx: Konva.Context, pts: number[], widths: number[]) {
+  ctx.beginPath();
+  const n = Math.min(widths.length, pts.length / 2);
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 2];
+    const y = pts[i * 2 + 1];
+    const r = Math.max(0.1, widths[i]);
+    ctx.moveTo(x + r, y);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
+}
+
+/** Trazo de ancho variable (pressureWidth): polígono cónico relleno. */
+function TaperedStroke({ d, common }: { d: Record<string, any>; common: Record<string, any> }) {
+  const pts: number[] = d.points ?? [];
+  const widths: number[] = d.widths ?? [];
+  const poly = useMemo(() => taperedStrokePolygon(pts, widths), [pts, widths]);
+  if (poly.length < 6) return null;
+  return (
+    <Shape
+      {...common}
+      sceneFunc={(ctx, shape) => {
+        tracePolygon(ctx, poly);
+        ctx.fillShape(shape);
+      }}
+      hitFunc={(ctx, shape) => {
+        // hit = el mismo polígono (aproximación suficiente para seleccionar/borrar)
+        tracePolygon(ctx, poly);
+        ctx.fillStrokeShape(shape);
+      }}
+      fill={d.color ?? "#fff"}
+      opacity={d.opacity ?? 1}
+      globalCompositeOperation={blendOp(d.blend)}
+    />
+  );
+}
+
+/** Spray: puntos = centros de dots, widths = radio por dot. */
+function SprayStroke({ d, common }: { d: Record<string, any>; common: Record<string, any> }) {
+  const pts: number[] = d.points ?? [];
+  const widths: number[] = d.widths ?? [];
+  if (!widths.length) return null;
+  return (
+    <Shape
+      {...common}
+      sceneFunc={(ctx, shape) => {
+        traceSpray(ctx, pts, widths);
+        ctx.fillShape(shape);
+      }}
+      hitFunc={(ctx, shape) => {
+        // hit barato: bbox de los puntos inflada por el radio máximo
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        let maxR = 0;
+        for (let i = 0; i < widths.length; i++) {
+          minX = Math.min(minX, pts[i * 2]);
+          maxX = Math.max(maxX, pts[i * 2]);
+          minY = Math.min(minY, pts[i * 2 + 1]);
+          maxY = Math.max(maxY, pts[i * 2 + 1]);
+          maxR = Math.max(maxR, widths[i]);
+        }
+        ctx.beginPath();
+        ctx.rect(minX - maxR, minY - maxR, maxX - minX + maxR * 2, maxY - minY + maxR * 2);
+        ctx.fillStrokeShape(shape);
+      }}
+      fill={d.color ?? "#fff"}
+      opacity={d.opacity ?? 1}
+      globalCompositeOperation={blendOp(d.blend)}
+    />
+  );
+}
+
+/** Objeto imagen (asset same-origin pegado en el lienzo). */
+function ImageObject({ d, common }: { d: Record<string, any>; common: Record<string, any> }) {
+  const img = useUrlImage(d.url);
+  if (!img) {
+    // placeholder mientras carga
+    return <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} fill="#333" opacity={0.5} />;
+  }
+  return <KImage {...common} image={img} width={d.w ?? 0} height={d.h ?? 0} opacity={d.opacity ?? 1} />;
+}
 
 /** Capa de dibujos: paths (lápiz), formas y textos. */
 export default function DrawLayer({
@@ -17,7 +169,12 @@ export default function DrawLayer({
 }) {
   const objects = useStore((s) => s.objects);
   const drawing = sortedObjects(objects).filter(
-    (o) => o.type === "path" || o.type === "shape" || o.type === "text" || o.type === "group",
+    (o) =>
+      o.type === "path" ||
+      o.type === "shape" ||
+      o.type === "text" ||
+      o.type === "group" ||
+      o.type === "image",
   );
   // posiciones iniciales del grupo al arrastrar (multi-select group move)
   const groupStart = useRef<Record<string, { x: number; y: number }>>({});
@@ -187,6 +344,24 @@ function DrawObject({
 
   if (obj.type === "path") {
     const pts = d.points ?? [];
+    // spray: dots con radio por punto
+    if (d.spray && d.widths?.length) {
+      return (
+        <>
+          <SprayStroke d={d} common={common} />
+          {selected && <SelectionHalo obj={obj} />}
+        </>
+      );
+    }
+    // ancho variable (presión/velocidad): trazo cónico relleno
+    if (d.widths?.length === pts.length / 2 && pts.length > 2) {
+      return (
+        <>
+          <TaperedStroke d={d} common={common} />
+          {selected && <SelectionHalo obj={obj} />}
+        </>
+      );
+    }
     // un solo punto (click del lápiz) → puntito relleno.
     // Va en un Group en (d.x, d.y) con el círculo en coords relativas:
     // arrastrar el Group reporta position() = d.x (consistente con el resto).
@@ -220,7 +395,17 @@ function DrawObject({
           lineJoin="round"
           tension={0.4}
           hitStrokeWidth={Math.max(12, (d.width ?? 4) * 2)}
+          globalCompositeOperation={blendOp(d.blend)}
         />
+        {selected && <SelectionHalo obj={obj} />}
+      </>
+    );
+  }
+
+  if (obj.type === "image") {
+    return (
+      <>
+        <ImageObject d={d} common={common} />
         {selected && <SelectionHalo obj={obj} />}
       </>
     );
@@ -264,10 +449,11 @@ function DrawObject({
   // shape
   const stroke = d.color ?? "#fff";
   const width = d.width ?? 4;
-  // estilo opcional: opacidad, dash y relleno translúcido (rect/circle)
+  // estilo opcional: opacidad, dash, mezcla y relleno translúcido (rect/circle)
   const shapeStyle = {
     opacity: d.opacity ?? 1,
     dash: d.dash ? dashPattern(width) : undefined,
+    globalCompositeOperation: blendOp(d.blend),
   };
   const fill = d.filled ? withAlpha(stroke, 0.25 * (d.opacity ?? 1)) : undefined;
   switch (d.shape) {
@@ -338,6 +524,9 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
     const pts: number[] = d.points ?? [];
     const color = d.color ?? "#fff";
     const width = d.width ?? 4;
+    // spray / ancho variable: mismos renderers que la rama principal
+    if (d.spray && d.widths?.length) return <SprayStroke d={d} common={common} />;
+    if (d.widths?.length === pts.length / 2 && pts.length > 2) return <TaperedStroke d={d} common={common} />;
     // un solo punto (click del lápiz) → puntito relleno
     if (pts.length === 2) {
       return (
@@ -366,6 +555,7 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
         lineJoin="round"
         tension={0.4}
         hitStrokeWidth={Math.max(12, width * 2)}
+        globalCompositeOperation={blendOp(d.blend)}
       />
     );
   }
@@ -374,12 +564,17 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
     return <Text {...common} text={d.text ?? ""} fontSize={d.fontSize ?? 22} fill={d.color ?? "#fff"} />;
   }
 
+  if (part.type === "image") {
+    return <ImageObject d={d} common={common} />;
+  }
+
   // shape (mismo estilo opcional que la rama principal)
   const stroke = d.color ?? "#fff";
   const width = d.width ?? 4;
   const shapeStyle = {
     opacity: d.opacity ?? 1,
     dash: d.dash ? dashPattern(width) : undefined,
+    globalCompositeOperation: blendOp(d.blend),
   };
   const fill = d.filled ? withAlpha(stroke, 0.25 * (d.opacity ?? 1)) : undefined;
   switch (d.shape) {
