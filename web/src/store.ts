@@ -2,6 +2,33 @@ import { create } from "zustand";
 import { defaultGridConfig, normalizeGridConfig } from "./grid";
 import type { GridConfig } from "./grid";
 
+/** Lectura/escritura segura de localStorage (nunca rompe si no está disponible). */
+export function lsGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function lsSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // almacenamiento no disponible: se ignora
+  }
+}
+
+function initialDrawColor(): string {
+  const c = lsGet("ttrpg:drawColor");
+  return c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#ff5252";
+}
+
+function initialDrawWidth(): number {
+  const n = Number(lsGet("ttrpg:drawWidth"));
+  return Number.isFinite(n) && n >= 1 && n <= 40 ? n : 4;
+}
+
 export type Role = "dm" | "player";
 
 export interface SceneObj {
@@ -195,8 +222,8 @@ export const useStore = create<BoardState>((set, get) => ({
   camera: { x: 0, y: 0, scale: 1 },
   followDm: false,
   tool: "select",
-  drawColor: "#ff5252",
-  drawWidth: 4,
+  drawColor: initialDrawColor(),
+  drawWidth: initialDrawWidth(),
   aoeAngle: 60,
   selection: [],
   contextMenu: null,
@@ -314,8 +341,14 @@ export const useStore = create<BoardState>((set, get) => ({
   setCamera: (cam) => set({ camera: cam }),
   setFollowDm: (v) => set({ followDm: v }),
   setTool: (t) => set({ tool: t, selection: [], contextMenu: null, measure: null, toolOptionsOpen: true }),
-  setDrawColor: (c) => set({ drawColor: c }),
-  setDrawWidth: (w) => set({ drawWidth: w }),
+  setDrawColor: (c) => {
+    lsSet("ttrpg:drawColor", c);
+    set({ drawColor: c });
+  },
+  setDrawWidth: (w) => {
+    lsSet("ttrpg:drawWidth", String(w));
+    set({ drawWidth: w });
+  },
   setAoeAngle: (a) => set({ aoeAngle: a }),
 
   setSelection: (ids) => set({ selection: ids }),
