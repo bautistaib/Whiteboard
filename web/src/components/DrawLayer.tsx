@@ -16,7 +16,7 @@ export default function DrawLayer({
 }) {
   const objects = useStore((s) => s.objects);
   const drawing = sortedObjects(objects).filter(
-    (o) => o.type === "path" || o.type === "shape" || o.type === "text",
+    (o) => o.type === "path" || o.type === "shape" || o.type === "text" || o.type === "group",
   );
   // posiciones iniciales del grupo al arrastrar (multi-select group move)
   const groupStart = useRef<Record<string, { x: number; y: number }>>({});
@@ -242,6 +242,21 @@ function DrawObject({
     );
   }
 
+  if (obj.type === "group") {
+    // dibujo compuesto: las parts son estáticas; los handlers del Group padre
+    // (eventos burbujean desde los hijos) hacen todo el grupo arrastrable.
+    return (
+      <>
+        <Group {...common}>
+          {(d.parts ?? []).map((p: any, i: number) => (
+            <GroupPart key={i} part={p} />
+          ))}
+        </Group>
+        {selected && <SelectionHalo obj={obj} />}
+      </>
+    );
+  }
+
   // shape
   const stroke = d.color ?? "#fff";
   const width = d.width ?? 4;
@@ -288,6 +303,91 @@ function DrawObject({
           {selected && <SelectionHalo obj={obj} />}
         </>
       );
+  }
+}
+
+/**
+ * Una parte de un `group`: se renderiza igual que la rama de su tipo pero
+ * estática (sin handlers ni halo — el Group padre ya los tiene). Las coords
+ * de la part son relativas al origen del grupo.
+ */
+function GroupPart({ part }: { part: { type: string; data: Record<string, any> } }) {
+  const d = part.data;
+  const common = {
+    x: d.x ?? 0,
+    y: d.y ?? 0,
+    rotation: d.rotation ?? 0,
+    scaleX: d.scaleX ?? 1,
+    scaleY: d.scaleY ?? 1,
+  };
+
+  if (part.type === "path") {
+    const pts: number[] = d.points ?? [];
+    const color = d.color ?? "#fff";
+    const width = d.width ?? 4;
+    // un solo punto (click del lápiz) → puntito relleno
+    if (pts.length === 2) {
+      return (
+        <Group x={common.x} y={common.y} rotation={common.rotation}
+               scaleX={common.scaleX} scaleY={common.scaleY}>
+          <Circle
+            x={pts[0]}
+            y={pts[1]}
+            radius={width / 2}
+            fill={color}
+            hitRadius={Math.max(8, width / 2 + 4)}
+          />
+        </Group>
+      );
+    }
+    return (
+      <Line
+        {...common}
+        points={pts}
+        stroke={color}
+        strokeWidth={width}
+        lineCap="round"
+        lineJoin="round"
+        tension={0.4}
+        hitStrokeWidth={Math.max(12, width * 2)}
+      />
+    );
+  }
+
+  if (part.type === "text") {
+    return <Text {...common} text={d.text ?? ""} fontSize={d.fontSize ?? 22} fill={d.color ?? "#fff"} />;
+  }
+
+  // shape
+  const stroke = d.color ?? "#fff";
+  const width = d.width ?? 4;
+  switch (d.shape) {
+    case "rect":
+      return <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} stroke={stroke} strokeWidth={width} />;
+    case "circle":
+      return (
+        <Ellipse
+          {...common}
+          radiusX={Math.abs(d.w ?? 0) / 2}
+          radiusY={Math.abs(d.h ?? 0) / 2}
+          stroke={stroke}
+          strokeWidth={width}
+        />
+      );
+    case "arrow":
+      return (
+        <Arrow
+          {...common}
+          points={d.points ?? [0, 0, 0, 0]}
+          stroke={stroke}
+          fill={stroke}
+          strokeWidth={width}
+          pointerLength={12}
+          pointerWidth={10}
+        />
+      );
+    default: // line
+      return <Line {...common} points={d.points ?? [0, 0, 0, 0]} stroke={stroke} strokeWidth={width} />;
   }
 }
 

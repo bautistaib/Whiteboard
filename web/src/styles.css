@@ -347,6 +347,10 @@ select {
   align-items: center;
   justify-content: center;
 }
+.swatch.add:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 .width-presets {
   display: flex;
   gap: 6px;

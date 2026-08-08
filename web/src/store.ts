@@ -33,7 +33,7 @@ export type Role = "dm" | "player";
 
 export interface SceneObj {
   id: string;
-  type: string; // token | path | shape | text | aoe
+  type: string; // token | path | shape | text | aoe | group
   z: number;
   owner: string;
   data: Record<string, any>;
@@ -270,6 +270,7 @@ export const useStore = create<BoardState>((set, get) => ({
           : type.startsWith("draw") ? "path"
           : type.startsWith("shape") ? "shape"
           : type.startsWith("text") ? "text"
+          : type.startsWith("group") ? "group"
           : "aoe";
         objects[payload.id] = {
           id: payload.id,

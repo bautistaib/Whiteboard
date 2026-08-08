@@ -175,6 +175,8 @@ export function prefixOf(objType: string): string {
       return "shape";
     case "text":
       return "text";
+    case "group":
+      return "group";
     default:
       return "aoe";
   }

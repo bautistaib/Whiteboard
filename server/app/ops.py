@@ -24,6 +24,7 @@ OBJECT_TYPES: dict[str, str] = {
     "shape": "shape",
     "text": "text",
     "aoe": "aoe",
+    "group": "group",
 }
 
 SCENE_OPS = {"switch", "create", "rename", "setGrid", "setBackground", "delete"}

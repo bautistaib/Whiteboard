@@ -32,7 +32,7 @@ const WIDTH_PRESETS = [2, 4, 8, 16];
 
 const ANGLE_PRESETS = [30, 45, 60, 90];
 
-const MAX_PRESETS = 10;
+const MAX_PRESETS = 24;
 
 /** Presets de color guardados; fallback a los swatches por defecto. */
 function loadPresets(): string[] {
@@ -73,12 +73,9 @@ export default function ToolOptionsPanel() {
 
   const addPreset = () => {
     if (presets.includes(drawColor)) return;
-    // máximo 10: si está lleno, se reemplaza el último
-    savePresets(
-      presets.length >= MAX_PRESETS
-        ? [...presets.slice(0, MAX_PRESETS - 1), drawColor]
-        : [...presets, drawColor],
-    );
+    // máximo 24: llena, el botón + se deshabilita (click derecho quita colores)
+    if (presets.length >= MAX_PRESETS) return;
+    savePresets([...presets, drawColor]);
   };
 
   const removePreset = (c: string) => savePresets(presets.filter((p) => p !== c));
@@ -108,7 +105,16 @@ export default function ToolOptionsPanel() {
             }}
           />
         ))}
-        <button className="swatch add" title="Guardar color actual" onClick={addPreset}>
+        <button
+          className="swatch add"
+          title={
+            presets.length >= MAX_PRESETS
+              ? "Lista llena — click derecho en un color para quitarlo"
+              : "Guardar color actual"
+          }
+          disabled={presets.length >= MAX_PRESETS}
+          onClick={addPreset}
+        >
           +
         </button>
         <input

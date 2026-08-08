@@ -75,6 +75,22 @@ export function objectBounds(o: SceneObj, cellSize: number): Bounds {
       maxY: Math.max(y, y + ey),
     };
   }
+  if (o.type === "group") {
+    // union de bounds de las parts, trasladadas al origen del grupo
+    const parts: { type: string; data: Record<string, any> }[] = d.parts ?? [];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of parts) {
+      const fake: SceneObj = {
+        id: "", type: p.type, z: 0, owner: "",
+        data: { ...p.data, x: (p.data.x ?? 0) + x, y: (p.data.y ?? 0) + y },
+      };
+      const b = objectBounds(fake, cellSize);
+      minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+    }
+    if (!Number.isFinite(minX)) return { minX: x, minY: y, maxX: x, maxY: y };
+    return { minX, minY, maxX, maxY };
+  }
   if (o.type === "aoe") {
     const r = (d.size_cells ?? 1) * cellSize;
     return { minX: x - r * sx, minY: y - r * sy, maxX: x + r * sx, maxY: y + r * sy };
