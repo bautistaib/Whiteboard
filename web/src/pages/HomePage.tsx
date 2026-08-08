@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { createCampaign, listCampaigns, tunnelInfo, type CampaignSummary } from "../api";
+import {
+  createCampaign,
+  deleteCampaign,
+  listCampaigns,
+  tunnelInfo,
+  type CampaignSummary,
+} from "../api";
 
 export default function HomePage() {
   const [name, setName] = useState("Mi campaña");
@@ -7,11 +13,31 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
+  const [listFailed, setListFailed] = useState(false);
 
-  const refresh = () => listCampaigns().then(setCampaigns).catch(() => {});
+  const refresh = () =>
+    listCampaigns()
+      .then((list) => {
+        setCampaigns(list);
+        setListFailed(false);
+      })
+      .catch(() => setListFailed(true));
   useEffect(() => {
     refresh();
   }, []);
+
+  const removeCampaign = async (c: CampaignSummary) => {
+    const ok = window.confirm(
+      `¿Borrar la campaña "${c.name}" con todas sus escenas, tokens y mapas? No se puede deshacer.`,
+    );
+    if (!ok) return;
+    try {
+      await deleteCampaign(c.dm_url.split("/").pop() ?? "");
+      refresh();
+    } catch (err: any) {
+      setError(err.message ?? "error");
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,9 +86,23 @@ export default function HomePage() {
                   <span className="muted small">
                     {new Date(c.created_at * 1000).toLocaleDateString()}
                   </span>
+                  <button
+                    type="button"
+                    className="mini danger"
+                    title="Borrar esta campaña y todo su contenido"
+                    onClick={() => removeCampaign(c)}
+                  >
+                    Borrar
+                  </button>
                 </div>
               ))}
             </div>
+          )}
+          {listFailed && campaigns.length === 0 && (
+            <p className="muted small">
+              ¿Tenías campañas y no las ves? Abrí esta página en la PC donde corre el
+              server, o entrá una vez con tu link de DM.
+            </p>
           )}
         </>
       ) : (

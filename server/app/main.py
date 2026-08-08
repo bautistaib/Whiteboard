@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ from . import config, db, uploads, ws
 from .grid import GridConfig
 from .state import state
 from .tunnel import tunnel_manager
+from .undo import undo_manager
 
 log = logging.getLogger("main")
 
@@ -26,6 +27,30 @@ WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
 
 class CreateCampaign(BaseModel):
     name: str = "Mi campaña"
+    # token de DM de una campaña existente (prueba de que ya sos DM del server)
+    dm: str = ""
+
+
+def _is_dm_token(token: str) -> bool:
+    resolved = state.resolve_token(token) if token else None
+    return resolved is not None and resolved[1] == "dm"
+
+
+def _is_local_request(request: Request) -> bool:
+    """True si el request NO vino por el túnel de Cloudflare.
+
+    El edge de Cloudflare siempre agrega headers Cf-* (y pisa los que pueda
+    mandar el cliente), así que su ausencia garantiza tráfico directo: el DM
+    en su PC (o alguien de su red local, que ya es confianza física).
+    La IP origen no sirve para discriminar: cloudflared conecta desde
+    127.0.0.1 igual que un navegador local.
+    """
+    return "cf-connecting-ip" not in request.headers and "cf-ray" not in request.headers
+
+
+def _can_manage_campaigns(request: Request, dm_token: str) -> bool:
+    """Administrar campañas: tráfico local (el DM en su PC) o token de DM."""
+    return _is_local_request(request) or _is_dm_token(dm_token)
 
 
 @asynccontextmanager
@@ -57,7 +82,11 @@ def create_app() -> FastAPI:
 
     # ---- REST: campañas y acceso -----------------------------------------
     @app.post("/api/campaigns")
-    async def create_campaign(body: CreateCampaign):
+    async def create_campaign(request: Request, body: CreateCampaign):
+        # Libre para tráfico local (el DM en su PC) o con token de DM;
+        # por el túnel (jugadores) solo con token de DM de una campaña previa.
+        if state.campaigns and not _can_manage_campaigns(request, body.dm):
+            raise HTTPException(status_code=403, detail="solo el DM puede crear campañas")
         campaign_id = uuid.uuid4().hex
         dm_token = secrets.token_urlsafe(16)
         player_token = secrets.token_urlsafe(16)
@@ -91,11 +120,20 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/campaigns")
-    async def list_campaigns():
-        """Lista de campañas existentes (para reabrir sin crear una nueva)."""
+    async def list_campaigns(request: Request, dm: str = Query(default="")):
+        """Lista de campañas existentes (para reabrir sin crear una nueva).
+
+        Incluye los links de DM: solo visible desde tráfico local (el DM en
+        su PC) o con un token de DM válido — los jugadores que abran la home
+        por el túnel reciben 403.
+        """
         campaigns = sorted(
             state.campaigns.values(), key=lambda c: c.created_at, reverse=True
         )
+        if campaigns and not _can_manage_campaigns(request, dm):
+            raise HTTPException(
+                status_code=403, detail="solo el DM puede listar las campañas"
+            )
         return [
             {
                 "id": c.id,
@@ -106,6 +144,59 @@ def create_app() -> FastAPI:
             }
             for c in campaigns
         ]
+
+    @app.delete("/api/campaigns/{token}")
+    async def delete_campaign(token: str):
+        """Borra una campaña y todo lo que contiene (solo su DM)."""
+        resolved = state.resolve_token(token)
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="link inválido")
+        campaign_id, role = resolved
+        if role != "dm":
+            raise HTTPException(status_code=403, detail="solo el DM puede borrar la campaña")
+        campaign = state.campaigns[campaign_id]
+
+        # cascada: objetos → escenas → variantes → personajes → assets (+archivos)
+        scene_ids = {
+            s.id for s in state.scenes.values() if s.campaign_id == campaign_id
+        }
+        for obj in [o for o in state.objects.values() if o.scene_id in scene_ids]:
+            state.mark_deleted(obj)
+            del state.objects[obj.id]
+        for s in [s for s in state.scenes.values() if s.campaign_id == campaign_id]:
+            state.mark_deleted(s)
+            del state.scenes[s.id]
+        char_ids = {
+            c.id for c in state.characters.values() if c.campaign_id == campaign_id
+        }
+        for v in [v for v in state.variants.values() if v.character_id in char_ids]:
+            state.mark_deleted(v)
+            del state.variants[v.id]
+        for c in [c for c in state.characters.values() if c.campaign_id == campaign_id]:
+            state.mark_deleted(c)
+            del state.characters[c.id]
+        for a in [a for a in state.assets.values() if a.campaign_id == campaign_id]:
+            state.mark_deleted(a)
+            del state.assets[a.id]
+            file_path = config.ASSETS_DIR / a.filename
+            if file_path.exists():
+                file_path.unlink()
+        state.mark_deleted(campaign)
+        del state.campaigns[campaign_id]
+        state.tokens.pop(campaign.dm_token, None)
+        state.tokens.pop(campaign.player_token, None)
+        undo_manager.clear_campaign(campaign_id)
+        await state.flush()
+
+        # cerrar la sala: la campaña deja de existir
+        room = ws.rooms.pop(campaign_id, None)
+        if room is not None:
+            for conn in list(room.conns):
+                try:
+                    await conn.ws.close(code=4409)
+                except Exception:  # noqa: BLE001 — ya estaba caída
+                    pass
+        return {"ok": True}
 
     @app.get("/api/settings")
     async def get_settings():

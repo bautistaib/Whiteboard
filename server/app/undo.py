@@ -56,5 +56,10 @@ class UndoManager:
         stacks = self._for(campaign_id, client_id)
         return stacks.redo.pop() if stacks.redo else None
 
+    def clear_campaign(self, campaign_id: str) -> None:
+        """Descarta las pilas de una campaña eliminada."""
+        for key in [k for k in self._stacks if k[0] == campaign_id]:
+            del self._stacks[key]
+
 
 undo_manager = UndoManager()

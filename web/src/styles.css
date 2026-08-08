@@ -329,6 +329,17 @@ button.full {
   background: #3d6bfe;
   border-color: #3d6bfe;
 }
+.scene-del {
+  margin-left: 6px;
+  padding: 0 3px;
+  border-radius: 4px;
+  color: #9aa3b2;
+  font-size: 11px;
+}
+.scene-del:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.15);
+}
 
 /* ---- tunnel banner ---- */
 .tunnel-banner {

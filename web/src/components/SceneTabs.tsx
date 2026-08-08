@@ -30,6 +30,20 @@ export default function SceneTabs() {
           title={s.isActive ? "Escena activa (doble click para renombrar)" : "Cambiar a esta escena"}
         >
           {s.name}
+          {!s.isActive && scenes.length > 1 && (
+            <span
+              className="scene-del"
+              title="Borrar esta escena (con todo su contenido)"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`¿Borrar la escena "${s.name}" con todo su contenido?`)) {
+                  wsClient.send("scene.delete", { sceneId: s.id });
+                }
+              }}
+            >
+              ✕
+            </span>
+          )}
         </button>
       ))}
       <button

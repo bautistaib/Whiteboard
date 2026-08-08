@@ -87,9 +87,9 @@ function Token({
       const nx = s.x + delta.x;
       const ny = s.y + delta.y;
       updateObjectLocal(id, { x: nx, y: ny });
-      if (id === obj.id) {
-        sendThrottled(`drag-${id}`, "token.move", { id, x: nx, y: ny });
-      }
+      // todos los miembros del grupo streamean su posición (throttled por id):
+      // los demás clientes ven el grupo moverse en vivo, no solo al soltar
+      sendThrottled(`drag-${id}`, "token.move", { id, x: nx, y: ny });
     }
   };
 

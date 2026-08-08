@@ -237,7 +237,13 @@ async def handle_connection(ws: WebSocket, token: str, name: str, client_id: str
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            await dispatch(conn, room, scene, msg)
+            # Re-resolver la escena activa en cada mensaje: el DM pudo haber
+            # cambiado de escena desde que se abrió esta conexión (si no, las
+            # ops se validan/aplican contra la escena vieja).
+            current = state.active_scene(campaign_id)
+            if current is None:
+                continue
+            await dispatch(conn, room, current, msg)
     except Exception:  # noqa: BLE001 — desconexión o error de red
         pass
     finally:

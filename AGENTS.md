@@ -13,7 +13,7 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG, self-hosted vía 
 
 ```powershell
 # tests backend
-cd server; .\.venv\Scripts\pytest          # 75 tests
+cd server; .\.venv\Scripts\pytest          # 87 tests
 
 # type checking Python (config canónica en server/pyrightconfig.json — no aflojarla,
 # no usar type: ignore salvo pedido explícito)

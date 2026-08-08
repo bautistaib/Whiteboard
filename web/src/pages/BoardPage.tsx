@@ -4,6 +4,7 @@ import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
 import Toolbar from "../components/Toolbar";
 import TunnelBanner from "../components/TunnelBanner";
+import { gridFromConfig } from "../grid";
 import { useStore, type Tool } from "../store";
 import { wsClient } from "../ws";
 
@@ -30,6 +31,7 @@ export default function BoardPage() {
   const tunnelUrl = useStore((s) => s.tunnelUrl);
   const tunnelBannerOpen = useStore((s) => s.tunnelBannerOpen);
   const setTunnelBannerOpen = useStore((s) => s.setTunnelBannerOpen);
+  const fatalReason = useStore((s) => s.fatalReason);
 
   useEffect(() => {
     wsClient.connect(token, name, clientId);
@@ -71,6 +73,15 @@ export default function BoardPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (fatalReason) {
+    return (
+      <div className="home">
+        <h1>Sesión terminada</h1>
+        <p className="error">{fatalReason}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="board-page">
@@ -114,29 +125,45 @@ export function prefixOf(objType: string): string {
 
 /** Ctrl+D: clona cada token seleccionado en una celda contigua libre. */
 export function duplicateSelection() {
+  duplicateTokens(useStore.getState().selection);
+}
+
+/**
+ * Clona los tokens dados en celdas libres cercanas.
+ * Las celdas se calculan con el GridSystem activo (snap/cellOf), así funciona
+ * igual en grilla cuadrada y hexagonal; el set de ocupadas es compartido,
+ * así dos clones nunca caen en la misma celda.
+ */
+export function duplicateTokens(ids: string[]) {
   const st = useStore.getState();
-  const { grid, objects, selection } = st;
+  const { grid, objects } = st;
+  const g = gridFromConfig(grid);
   const cell = grid.cellSize;
-  for (const id of selection) {
+  const keyOf = (p: { x: number; y: number }) => {
+    const c = g.cellOf(p);
+    return `${c[0]},${c[1]}`;
+  };
+  const occupied = new Set(
+    Object.values(objects)
+      .filter((o) => o.type === "token")
+      .map((o) => keyOf({ x: o.data.x ?? 0, y: o.data.y ?? 0 })),
+  );
+  for (const id of ids) {
     const obj = objects[id];
     if (!obj || obj.type !== "token") continue;
     const x = obj.data.x ?? 0;
     const y = obj.data.y ?? 0;
-    // buscar celda contigua libre (derecha, abajo, izquierda, arriba, …)
-    const occupied = new Set(
-      Object.values(objects)
-        .filter((o) => o.type === "token")
-        .map((o) => `${Math.round(o.data.x / cell)},${Math.round(o.data.y / cell)}`),
-    );
+    // buscar la celda libre más cercana (anillos alrededor del token)
     let placed: { x: number; y: number } | null = null;
     outer: for (const ring of [1, 2, 3]) {
       for (let dx = -ring; dx <= ring; dx++) {
         for (let dy = -ring; dy <= ring; dy++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-          const nx = x + dx * cell;
-          const ny = y + dy * cell;
-          if (!occupied.has(`${Math.round(nx / cell)},${Math.round(ny / cell)}`)) {
-            placed = { x: nx, y: ny };
+          const candidate = g.snap({ x: x + dx * cell, y: y + dy * cell });
+          const key = keyOf(candidate);
+          if (!occupied.has(key)) {
+            placed = candidate;
+            occupied.add(key);
             break outer;
           }
         }

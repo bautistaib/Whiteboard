@@ -40,6 +40,7 @@ Whiteboard/
       grid/                   GridSystem del cliente (espejo del server)
       components/Board.tsx    Stage Konva: pan/zoom, herramientas, drop desde biblioteca
       components/             capas (Background/Grid/Draw/AoE/Token/Overlay) + UI
+                              (SelectionTransformer: rotación libre; objectBounds: bbox por tipo)
 ```
 
 ## Arquitectura
@@ -62,6 +63,8 @@ Server-autoritativo, snapshot + deltas (sin CRDT):
 4. **Optimistic updates solo para drags propios** (fluidez); el resto espera el broadcast.
 5. Reconexión: backoff exponencial; al reconectar llega snapshot fresco que **pisa el estado local**; las ops se encolan hasta que llega el snapshot (nunca se envían antes).
 6. Creates llevan uuid generado por el cliente → retries idempotentes.
+7. **La escena activa se re-resuelve en cada mensaje** (`state.active_scene`), no se ata a la conexión: un `scene.switch` del DM no puede dejar conexiones operando sobre la escena vieja.
+8. Cierres fatales: `4401` (token inválido) y `4409` (campaña borrada / sin escena activa) **no se reconectan**; el cliente muestra el motivo.
 
 ### Catálogo de ops
 
@@ -75,12 +78,12 @@ Objetos (persisten, entran al undo):
 | `token.remove` | `{id}` | |
 | `token.duplicate` | `{id, newId, x, y}` | broadcast normalizado como `token.add` |
 | `token.setVariant` | `{id, variantId}` | server resuelve asset_id/size_cells de la variante |
-| `draw.add/remove` | | paths del lápiz |
+| `draw.add/update/remove` | | paths del lápiz; `update` mueve el trazo (patch x/y) |
 | `shape.add/update/remove` | | rect/circle/line/arrow |
 | `text.add/update/remove` | | |
 | `aoe.add/update/remove` | | circle/cone/line, size_cells, rotation |
 
-Escena (solo DM, no entran al undo): `scene.switch/create/rename/setGrid/setBackground`. `switch` manda snapshot fresco a toda la sala; el resto manda `scene.update`.
+Escena (solo DM, no entran al undo): `scene.switch/create/rename/delete/setGrid/setBackground`. `switch` manda snapshot fresco a toda la sala; el resto manda `scene.update`. `delete` borra la escena con sus objetos; no permite borrar la escena activa ni la última. `switch`/`rename`/`delete` a una escena inexistente se rechazan con error limpio (no tumban la conexión).
 
 Meta: `undo` / `redo`.
 
@@ -100,6 +103,11 @@ Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync
 - **Borrador**: click simple = borrar objeto entero; arrastre = borrado parcial de trazos (los puntos del path bajo el cursor se eliminan y el path se divide en segmentos: un `draw.remove` + un `draw.add` por segmento). `eraseFlag.ts` evita que el click posterior al arrastre borre el objeto entero por accidente.
 - **Opciones de herramienta**: panel contextual (`ToolOptionsPanel`) visible con cualquier herramienta de dibujo; el grosor seleccionado también define el tamaño del borrador.
 - **Permisos por defecto**: `playersMoveAny` default `true` (cualquiera mueve cualquier token); el DM lo restringe desde el panel de grilla.
+- **Drag en grupo**: todos los miembros de la selección streamean su posición (throttled por id), no solo el líder — el grupo se ve moverse en vivo en los demás clientes. Aplica a tokens (`token.move`, en `TokenLayer`) y a dibujos — paths/shapes/text/aoe (`<prefix>.update`, en `useObjectHandlers` con un `groupStart` compartido por capa). Los trazos del lápiz son arrastrables como cualquier objeto.
+- **Selección por rectángulo y halo**: usan el bounding box del objeto (`components/objectBounds.ts`), no su origen — imprescindible para los trazos del lápiz, que guardan `x,y` en (0,0) con puntos absolutos. Así se pueden seleccionar las partes de un dibujo y, p. ej., convertirlas juntas en un token.
+- **Rotación y resize libres**: con un único `aoe`/`shape`/`text`/`path` seleccionado (herramienta select) aparece el Transformer de Konva (`components/SelectionTransformer.tsx`, en su propia capa porque OverlayLayer tiene `listening={false}`). Opera con `rotation` + `scaleX`/`scaleY` + `x`/`y`; como el render aplica esos mismos campos (`common` en DrawLayer, Group en AoELayer), no se "hornea" la geometría por tipo — el patch manda `{x, y, rotation, scaleX, scaleY}` throttled. Los tokens rotan de a 90° por menú contextual (no escalan: usan `size_cells`). Ojo: un path escalado/rotado hace que el borrador parcial transforme su trazo a coords locales (`mundo = (x,y) + rot·scale·punto`) con test elíptico del radio, y los segmentos resultantes heredan `scaleX/scaleY/rotation`.
+- **Duplicar**: la celda destino se busca con el `GridSystem` activo (`snap`/`cellOf`), así funciona en cuadrada y hex; el set de celdas ocupadas es compartido entre los clones de un mismo batch (nunca caen dos en la misma celda).
+- **Export PNG**: el botón 📷 (Toolbar) captura el `Stage` (registrado en `nodeRegistry` como `"stage"`) vía `toCanvas` y lo compone sobre el `backgroundColor` de la escena — exporta exactamente lo visible en pantalla.
 
 ### Undo por usuario
 
@@ -116,6 +124,13 @@ Interfaz idéntica en server (`app/grid.py`) y cliente (`web/src/grid/`): `cellO
 - **Cuadrada**: snap al centro de celda; distancia Chebyshev (diagonales = 1); línea supercover para `cellsBetween`.
 - **Hexagonal**: coordenadas **axiales** con redondeo cúbico; `cellSize` = ancho visual del hex (flat: `2·size`, pointy: `√3·size`); distancia hexagonal `(|dq|+|dr|+|dq+dr|)/2`, no euclídea; línea por lerp cúbico.
 - **Calibración**: `offsetX/offsetY` se aplican antes del redondeo (`cellOf` resta el offset, `cellCenter` lo suma). Es la matemática más delicada del proyecto — está cubierta por tests con casos conocidos (`tests/test_grid.py`); tocarla sin correr esos tests es mala idea.
+
+### REST de campañas y acceso
+
+- `POST /api/campaigns` — crea campaña. Libre para tráfico local o con `dm` (token de DM de una campaña existente) en el body.
+- `GET /api/campaigns?dm=<token>` — lista con links de DM/jugador. Misma regla.
+- **Regla de acceso local-vs-túnel**: `_can_manage_campaigns` permite si el request es local **o** trae token de DM válido. "Local" = sin headers `Cf-Connecting-Ip`/`Cf-Ray`: el edge de Cloudflare siempre los agrega (y pisa los del cliente) en el tráfico del túnel, así que su ausencia garantiza conexión directa (el DM en su PC, o su LAN). La IP origen no discrimina: cloudflared conecta desde 127.0.0.1 igual que un navegador local. Así la home del DM siempre funciona en su máquina aunque no tenga el token guardado, y un jugador que abra la home por el túnel recibe 403. La web además guarda el token de DM en `localStorage` (`ttrpg:dmToken`) al entrar como DM, por si el DM entra por el link público.
+- `DELETE /api/campaigns/<dm_token>` — borra la campaña en cascada (escenas, objetos, personajes/variantes, assets **y sus archivos**, tokens de acceso, pilas de undo) y cierra la sala (WS `4409`). Solo con el token de DM de esa campaña.
 
 ### Uploads
 
@@ -152,7 +167,7 @@ Para probar el server sirviendo el bundle (modo producción): `npm run build` en
 
 ```powershell
 cd server
-.\.venv\Scripts\pytest            # 75 tests
+.\.venv\Scripts\pytest            # 87 tests
 npx pyright                       # type checking (config canónica en pyrightconfig.json)
 
 cd web
@@ -166,8 +181,8 @@ Cobertura de tests actual:
 | Grilla | `test_grid.py` | snap/centros con y sin offset (cuadrada, hex flat y pointy), distancia Chebyshev y hexagonal (casos conocidos), `cellsBetween` (rectas, diagonales, sin duplicados, adyacencia), factory |
 | Ops y permisos | `test_ops_undo.py` | apply de cada acción, idempotencia por uuid, permisos DM/jugador/propio/ajeno/`playersMoveAny`, objetos de otra escena, generación de inversas |
 | Undo | `test_undo.py` | ediciones intercaladas de 2 usuarios, undo de borrado (recrear), undo de movido-y-borrado (descartar y seguir), redo, invalidación de redo, LWW, pilas por usuario |
-| REST/WS | `test_api.py` | crear campaña, resolución de tokens, WS inválido, snapshot, broadcast (incluye emisor, seq), reconexión con resync, op rechazada, undo por WS, uploads (WebP, downscale 512/4096, >10 MB, imagen inválida), **round-trip de persistencia** (flush → estado fresco idéntico) |
-| Escenas | `test_ws_scenes.py` | create/rename/setGrid/setBackground, switch con snapshot fresco a todos, objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
+| REST/WS | `test_api.py` | crear campaña (bootstrap libre, siguientes exigen DM), listar campañas (gate DM), borrado de campaña (cascada completa + archivos + undo + cierre de sala), resolución de tokens, WS inválido, snapshot, broadcast (incluye emisor, seq), reconexión con resync, op rechazada, undo por WS, uploads (WebP, downscale 512/4096, >10 MB, imagen inválida), **round-trip de persistencia** (flush → estado fresco idéntico) |
+| Escenas | `test_ws_scenes.py` | create/rename/delete/setGrid/setBackground, switch con snapshot fresco a todos, **ops post-switch aplican sobre la escena nueva** (regresión: escena stale), switch a escena inexistente (error limpio), objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
 | Biblioteca | `test_library.py` | personaje+variante automáticos, variante en personaje existente, permisos de borrado, cascada (variantes + personaje vacío), borrado de archivo, path traversal, `/api/tunnel` solo DM |
 | Túnel/flush | `test_tunnel.py` | regex de URL sobre salida real de cloudflared, falsos positivos, flush solo-dirty, add+delete en la misma ventana |
 

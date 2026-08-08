@@ -26,7 +26,7 @@ OBJECT_TYPES: dict[str, str] = {
     "aoe": "aoe",
 }
 
-SCENE_OPS = {"switch", "create", "rename", "setGrid", "setBackground"}
+SCENE_OPS = {"switch", "create", "rename", "setGrid", "setBackground", "delete"}
 EPHEMERAL_OPS = {"cursor.move", "ping", "camera.sync"}
 META_OPS = {"undo", "redo"}
 
@@ -175,7 +175,9 @@ def _apply_scene(
         scene.background_asset_id = payload.get("assetId")
         state.mark_dirty(scene)
     elif action == "rename":
-        target = state.scenes[payload.get("sceneId", scene.id)]
+        target = state.scenes.get(payload.get("sceneId", scene.id))
+        if target is None or target.campaign_id != scene.campaign_id:
+            raise OpError("escena inexistente o de otra campaña")
         target.name = payload["name"]
         state.mark_dirty(target)
     elif action == "create":
@@ -191,13 +193,28 @@ def _apply_scene(
         state.scenes[new_scene.id] = new_scene
         state.mark_dirty(new_scene)
     elif action == "switch":
-        target = state.scenes[payload["sceneId"]]
+        target = state.scenes.get(payload["sceneId"])
+        if target is None:
+            raise OpError("escena inexistente")
         if target.campaign_id != scene.campaign_id:
             raise OpError("escena de otra campaña")
         scene.is_active = False
         state.mark_dirty(scene)
         target.is_active = True
         state.mark_dirty(target)
+    elif action == "delete":
+        target = state.scenes.get(payload["sceneId"])
+        if target is None or target.campaign_id != scene.campaign_id:
+            raise OpError("escena inexistente o de otra campaña")
+        if target.is_active:
+            raise OpError("no se puede borrar la escena activa")
+        if len(state.campaign_scenes(scene.campaign_id)) <= 1:
+            raise OpError("no se puede borrar la última escena")
+        for obj in [o for o in state.objects.values() if o.scene_id == target.id]:
+            state.mark_deleted(obj)
+            del state.objects[obj.id]
+        state.mark_deleted(target)
+        del state.scenes[target.id]
     else:
         raise OpError(f"op de escena desconocida: {action}")
 
@@ -239,6 +256,9 @@ def compute_inverse(
             "payload": {
                 "id": obj.id,
                 "z_index": obj.z_index,
+                # escena donde se borró: si el DM cambió de escena, la
+                # recreación se descarta (no resucita en la escena activa)
+                "scene_id": obj.scene_id,
                 "data": json.loads(obj.data_json),
             },
         }
@@ -301,7 +321,12 @@ def apply_inverse(
         return True
 
     if action == "add":
-        # recrear objeto borrado (idempotente por uuid del cliente)
+        # recrear objeto borrado (idempotente por uuid del cliente).
+        # Solo si seguimos en la escena donde se borró: las demás ramas
+        # descartan cuando el objeto no es de la escena activa; acá no hay
+        # objeto que chequear, así que manda el scene_id registrado.
+        if payload.get("scene_id") != scene.id:
+            return False
         apply(state, scene, client_id, op_type, payload)
         return True
 

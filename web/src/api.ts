@@ -1,10 +1,15 @@
 /** REST helpers. */
 
+/** Token de DM guardado al entrar a una campaña como DM (prueba para la home). */
+export function storedDmToken(): string {
+  return localStorage.getItem("ttrpg:dmToken") ?? "";
+}
+
 export async function createCampaign(name: string): Promise<{ dm_url: string; player_url: string }> {
   const resp = await fetch("/api/campaigns", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, dm: storedDmToken() }),
   });
   if (!resp.ok) throw new Error("no se pudo crear la campaña");
   return resp.json();
@@ -19,9 +24,16 @@ export interface CampaignSummary {
 }
 
 export async function listCampaigns(): Promise<CampaignSummary[]> {
-  const resp = await fetch("/api/campaigns");
+  const params = new URLSearchParams({ dm: storedDmToken() });
+  const resp = await fetch(`/api/campaigns?${params}`);
   if (!resp.ok) throw new Error("no se pudieron listar las campañas");
   return resp.json();
+}
+
+/** Borra una campaña entera (su token de DM va en el path). */
+export async function deleteCampaign(dmToken: string): Promise<void> {
+  const resp = await fetch(`/api/campaigns/${dmToken}`, { method: "DELETE" });
+  if (!resp.ok) throw new Error("no se pudo borrar la campaña");
 }
 
 export async function getSettings(): Promise<{ defaultGrid: Record<string, any> }> {
