@@ -6,6 +6,7 @@ import Toolbar, { TOOLS } from "../components/Toolbar";
 import TunnelBanner from "../components/TunnelBanner";
 import { gridFromConfig } from "../grid";
 import { useStore, type Tool } from "../store";
+import { getTheme, setTheme, type Theme } from "../theme";
 import { wsClient } from "../ws";
 
 // derivado de TOOLS (Toolbar.tsx) para no duplicar las teclas
@@ -120,6 +121,7 @@ export default function BoardPage() {
             🔗 Link
           </button>
         )}
+        <ThemeToggle />
         <span className={`conn ${connected ? "ok" : "off"}`}>
           {connected ? "conectado" : "reconectando…"}
         </span>
@@ -142,6 +144,25 @@ export function renameSelf() {
   localStorage.setItem("ttrpg:name", next);
   st.setSession({ name: next });
   wsClient.send("presence.rename", { name: next });
+}
+
+/** Toggle de tema claro/oscuro (preferencia local, persistida en localStorage). */
+function ThemeToggle() {
+  const [theme, setThemeState] = useState<Theme>(getTheme());
+  const toggle = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    setThemeState(next);
+  };
+  return (
+    <button
+      className="mini"
+      title={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+      onClick={toggle}
+    >
+      {theme === "dark" ? "☀" : "🌙"}
+    </button>
+  );
 }
 
 export function prefixOf(objType: string): string {
