@@ -7,8 +7,8 @@ import { prefixOf } from "../pages/BoardPage";
 import { canModifyObject } from "./DrawLayer";
 import { getNode } from "./nodeRegistry";
 
-/** Tipos con rotación libre (los tokens rotan de a 90° por menú contextual). */
-const ROTATABLE = new Set(["aoe", "shape", "text", "path"]);
+/** Tipos con transformer (resize + rotación). Los tokens también rotan de a 90° por menú contextual. */
+const TRANSFORMABLE = new Set(["aoe", "shape", "text", "path", "token"]);
 
 /**
  * Handle de transformación sobre el objeto seleccionado (selección simple,
@@ -29,20 +29,20 @@ export default function SelectionTransformer() {
   const playersMoveAny = useStore((s) => s.grid.playersMoveAny);
 
   const objId = obj?.id;
-  const rotatable =
+  const transformable =
     tool === "select" &&
     !!obj &&
-    ROTATABLE.has(obj.type) &&
+    TRANSFORMABLE.has(obj.type) &&
     canModifyObject(obj, role, clientId, playersMoveAny);
 
   // attach/detach del nodo
   useEffect(() => {
     const tr = trRef.current;
     if (!tr) return;
-    const node = rotatable && objId ? getNode(objId) : undefined;
+    const node = transformable && objId ? getNode(objId) : undefined;
     tr.nodes(node ? [node] : []);
     tr.getLayer()?.batchDraw();
-  }, [rotatable, objId]);
+  }, [transformable, objId]);
 
   // re-sync visual cuando el objeto cambia por fuera (otro cliente, undo, drag)
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function SelectionTransformer() {
     trRef.current?.forceUpdate();
   }, [obj]);
 
-  if (!rotatable || !obj) return null;
+  if (!transformable || !obj) return null;
 
   const patch = () => {
     const node = trRef.current?.nodes()[0];
@@ -71,6 +71,8 @@ export default function SelectionTransformer() {
       resizeEnabled
       flipEnabled={false}
       anchorSize={8}
+      // los tokens "pisan" a los cuartos de giro al rotar (coherente con el menú contextual)
+      rotationSnaps={obj.type === "token" ? [0, 90, 180, 270] : []}
       anchorStroke="#4fc3f7"
       borderStroke="#4fc3f7"
       onTransformStart={() => {
