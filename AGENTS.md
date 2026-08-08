@@ -32,3 +32,4 @@ cd web; npm run build                       # tsc --noEmit + vite build
 - No agregar cuentas/auth real: el acceso es token-en-URL (`/dm/<token>`, `/j/<token>`), rol embebido en el token.
 - No persistir las pilas de undo (decisión del spec).
 - Esquema de tablas exactamente como `docs/SPEC-whiteboard-ttrpg.md` §Modelo de datos.
+- Commit often, unless you are on the master branch
