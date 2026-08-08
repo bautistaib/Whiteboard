@@ -14,7 +14,9 @@ from PIL import Image
 from . import config
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
-MAX_SIDE = {"map": 4096, "token": 512, "other": 2048}
+# fill: rellenos del balde de pintura — como mapa en tamaño, pero no se lista
+# como mapa en la biblioteca (son artefactos de dibujo, no fondos de escena)
+MAX_SIDE = {"map": 4096, "token": 512, "other": 2048, "fill": 4096}
 
 
 class UploadError(Exception):

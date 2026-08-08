@@ -231,7 +231,7 @@ def create_app() -> FastAPI:
         if resolved is None:
             raise HTTPException(status_code=403, detail="link inválido")
         campaign_id, _role = resolved
-        if kind not in ("token", "map", "other"):
+        if kind not in ("token", "map", "other", "fill"):
             raise HTTPException(status_code=400, detail="kind inválido")
 
         content = await file.read()

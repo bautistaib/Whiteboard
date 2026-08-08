@@ -421,6 +421,24 @@ def test_upload_map_downscales_to_4096(client, campaign):
     assert max(saved.size) <= 4096
 
 
+def test_upload_fill_kind_accepted_not_a_map(client, campaign):
+    """Los rellenos del balde se suben con kind=fill: tamaño de mapa (≤4096)
+    pero sin aparecer como mapa en la biblioteca ni crear personaje."""
+    resp = client.post(
+        f"/api/upload/{campaign['player_token']}?kind=fill&name=Ana",
+        files={"file": ("relleno.png", png_bytes(size=(5000, 100)), "image/png")},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["characterId"] == ""  # solo los tokens crean personaje
+    asset = state.assets[body["id"]]
+    assert asset.kind == "fill"
+    from app import config
+
+    saved = Image.open(config.ASSETS_DIR / body["filename"])
+    assert max(saved.size) <= 4096
+
+
 def test_upload_over_10mb_rejected(client, campaign):
     big = b"\x00" * (10 * 1024 * 1024 + 1)
     resp = client.post(

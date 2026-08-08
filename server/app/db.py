@@ -45,7 +45,7 @@ class Asset(SQLModel, table=True):
     id: str = Field(primary_key=True)
     campaign_id: str = Field(index=True)
     filename: str
-    kind: str  # token | map | other
+    kind: str  # token | map | other | fill
     uploaded_by: str = ""
     created_at: float = 0.0
 

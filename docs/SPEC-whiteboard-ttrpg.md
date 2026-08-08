@@ -99,7 +99,7 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG por Discord, self-
 ```
 campaigns(id, name, dm_token, player_token, created_at)
 scenes(id, campaign_id, name, background_asset_id, grid_config_json, is_active, sort_order)
-assets(id, campaign_id, filename, kind[token|map|other], uploaded_by, created_at)
+assets(id, campaign_id, filename, kind[token|map|other|fill], uploaded_by, created_at)
 characters(id, campaign_id, name)
 character_variants(id, character_id, asset_id, label, size_cells, sort_order)
 objects(id, scene_id, type[token|path|shape|text|aoe|group|image], z_index, owner, data_json, updated_at)
@@ -111,7 +111,7 @@ objects(id, scene_id, type[token|path|shape|text|aoe|group|image], z_index, owne
 - Persistencia write-through con debounce (~1 s) desde el estado en memoria.
 
 ### Uploads
-- Límite 10 MB por imagen; recompresión server-side a WebP (mapas máx. 4096 px de lado, tokens máx. 512 px).
+- Límite 10 MB por imagen; recompresión server-side a WebP (mapas y rellenos del balde máx. 4096 px de lado, tokens máx. 512 px). Los rellenos (`kind=fill`) no se listan como mapas en la biblioteca.
 - Servidas con cache headers agresivos (son inmutables).
 
 ## Deploy (experiencia del DM)

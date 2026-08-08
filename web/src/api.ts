@@ -61,7 +61,7 @@ export async function uploadImage(
   token: string,
   file: File | Blob,
   opts: {
-    kind: "token" | "map" | "other";
+    kind: "token" | "map" | "other" | "fill";
     name: string;
     characterId?: string;
     variantLabel?: string;

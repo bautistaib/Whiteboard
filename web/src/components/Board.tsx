@@ -243,9 +243,10 @@ export default function Board() {
       // la opacidad se hornea en el PNG; data.opacity queda en su default
       const out = await maskToPngBlob(mask, img.width, img.height, st.drawColor, st.drawOpacity);
       if (!out || out.count < 100) return; // área ínfima: probablemente misclick
-      // kind "map": conserva el tamaño (≤4096 px) y la recompresión WebP mantiene alfa
+      // kind "fill": conserva el tamaño (≤4096 px) y el alfa, pero NO se
+      // lista como mapa en la biblioteca (son artefactos de dibujo)
       const up = await uploadImage(st.token, out.blob, {
-        kind: "map",
+        kind: "fill",
         name: "relleno",
         filename: "relleno.png",
       });
