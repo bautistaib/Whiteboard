@@ -420,6 +420,9 @@ export const useStore = create<BoardState>((set, get) => ({
       } else if (action === "restore") {
         const o = objects[payload.id];
         if (o) objects[payload.id] = { ...o, data: payload.data ?? {} };
+      } else if (action === "reorder") {
+        const o = objects[payload.id];
+        if (o) objects[payload.id] = { ...o, z: payload.z_index };
       } else if (action === "setVariant") {
         const o = objects[payload.id];
         if (o) objects[payload.id] = { ...o, data: { ...o.data, ...(payload.data ?? {}) } };

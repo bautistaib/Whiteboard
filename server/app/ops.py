@@ -99,7 +99,12 @@ def validate(
     if obj is None or obj.scene_id != scene.id:
         raise OpError("objeto inexistente o de otra escena")
 
-    if action in ("move", "update", "remove", "setVariant", "duplicate"):
+    if action == "reorder":
+        z = payload.get("z_index")
+        if isinstance(z, bool) or not isinstance(z, int):
+            raise OpError("reorder requiere z_index entero")
+
+    if action in ("move", "update", "remove", "setVariant", "duplicate", "reorder"):
         if role == "dm":
             return
         # Jugadores: tokens propios siempre; cualquiera si la escena lo permite.
@@ -170,6 +175,8 @@ def apply(
         if variant is not None:
             data["asset_id"] = variant.asset_id
             data["size_cells"] = variant.size_cells
+    elif action == "reorder":
+        obj.z_index = int(payload["z_index"])
     elif action == "remove":
         del state.objects[obj.id]
         state.mark_deleted(obj)
@@ -307,6 +314,11 @@ def compute_inverse(
             "type": f"{prefix}.restore",
             "payload": {"id": obj.id, "data": data},
         }
+    if action == "reorder":
+        return {
+            "type": f"{prefix}.reorder",
+            "payload": {"id": obj.id, "z_index": obj.z_index},
+        }
     return None
 
 
@@ -330,7 +342,7 @@ def apply_inverse(
         state.mark_dirty(obj)
         return True
 
-    if action in ("move", "remove"):
+    if action in ("move", "remove", "reorder"):
         obj = state.objects.get(payload["id"])
         if obj is None or obj.scene_id != scene.id:
             return False  # descartar y seguir con el anterior

@@ -175,6 +175,66 @@ def test_apply_inverse_discards_missing_object(campaign):
     assert ok is False
 
 
+# ---- reorder -----------------------------------------------------------------
+
+
+def test_reorder_sets_z_and_orders_scene_objects(campaign):
+    scene = campaign["scene"]
+    add_token(scene, obj_id="tok1")
+    add_token(scene, obj_id="tok2")
+    add_token(scene, obj_id="tok3")
+    assert [o.id for o in state.scene_objects(scene.id)] == ["tok1", "tok2", "tok3"]
+    ops.apply(state, scene, "dm-client", "token.reorder", {"id": "tok1", "z_index": 99})
+    assert state.objects["tok1"].z_index == 99
+    assert [o.id for o in state.scene_objects(scene.id)] == ["tok2", "tok3", "tok1"]
+
+
+def test_reorder_validate_requires_int_z_index(campaign):
+    scene = campaign["scene"]
+    add_token(scene)
+    with pytest.raises(ops.OpError):
+        ops.validate(state, "dm", "dm-client", scene, "token.reorder", {"id": "tok1"})
+    with pytest.raises(ops.OpError):
+        ops.validate(state, "dm", "dm-client", scene, "token.reorder",
+                     {"id": "tok1", "z_index": "arriba"})
+    with pytest.raises(ops.OpError):
+        ops.validate(state, "dm", "dm-client", scene, "token.reorder",
+                     {"id": "tok1", "z_index": True})
+    ops.validate(state, "dm", "dm-client", scene, "token.reorder",
+                 {"id": "tok1", "z_index": 7})
+
+
+def test_reorder_permissions_like_move(campaign):
+    scene = campaign["scene"]
+    grid = json.loads(scene.grid_config_json)
+    grid["playersMoveAny"] = False
+    scene.grid_config_json = json.dumps(grid)
+    add_token(scene, client_id="player-client", obj_id="mine")
+    add_token(scene, client_id="other-client", obj_id="theirs")
+    ops.validate(state, "player", "player-client", scene, "token.reorder",
+                 {"id": "mine", "z_index": 5})
+    with pytest.raises(ops.OpError):
+        ops.validate(state, "player", "player-client", scene, "token.reorder",
+                     {"id": "theirs", "z_index": 5})
+
+
+def test_reorder_undo_roundtrip(campaign):
+    scene = campaign["scene"]
+    add_token(scene, obj_id="tok1")
+    add_token(scene, obj_id="tok2")
+    old_z = state.objects["tok1"].z_index
+    inverse = ops.compute_inverse(state, scene, "token.reorder",
+                                  {"id": "tok1", "z_index": 99})
+    ops.apply(state, scene, "dm-client", "token.reorder", {"id": "tok1", "z_index": 99})
+    from app.undo import undo_manager as um
+    um.push_undo("camp1", "dm-client", inverse)
+    assert state.objects["tok1"].z_index == 99
+    inv = ops.undo_step(state, scene, um, "camp1", "dm-client", "undo")
+    assert inv == {"type": "token.reorder", "payload": {"id": "tok1", "z_index": old_z}}
+    assert state.objects["tok1"].z_index == old_z
+    assert [o.id for o in state.scene_objects(scene.id)] == ["tok1", "tok2"]
+
+
 # ---- group (dibujos compuestos) ----------------------------------------------
 
 

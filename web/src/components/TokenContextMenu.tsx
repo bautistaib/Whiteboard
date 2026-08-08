@@ -300,6 +300,30 @@ export default function TokenContextMenu() {
           </div>
         )}
         <div
+          className="menu-item"
+          onClick={() => {
+            const zs = Object.values(objects).map((o) => o.z);
+            const maxZ = zs.length ? Math.max(...zs) : 0;
+            if (obj.z < maxZ)
+              send(`${prefixOf(obj.type)}.reorder`, { id: obj.id, z_index: maxZ + 1 });
+            else close();
+          }}
+        >
+          Traer al frente
+        </div>
+        <div
+          className="menu-item"
+          onClick={() => {
+            const zs = Object.values(objects).map((o) => o.z);
+            const minZ = zs.length ? Math.min(...zs) : 0;
+            if (obj.z > minZ)
+              send(`${prefixOf(obj.type)}.reorder`, { id: obj.id, z_index: minZ - 1 });
+            else close();
+          }}
+        >
+          Enviar al fondo
+        </div>
+        <div
           className="menu-item danger"
           onClick={() => send(`${prefixOf(obj.type)}.remove`, { id: obj.id })}
         >
