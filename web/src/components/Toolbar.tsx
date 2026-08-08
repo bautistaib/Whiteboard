@@ -1,7 +1,9 @@
+import type Konva from "konva";
 import { useState } from "react";
 import { useStore, type Tool } from "../store";
 import { wsClient } from "../ws";
 import CalibrationPanel from "./CalibrationPanel";
+import { getNode } from "./nodeRegistry";
 import ToolOptionsPanel from "./ToolOptionsPanel";
 
 const TOOLS: { id: Tool; label: string; icon: string }[] = [
@@ -61,6 +63,13 @@ export default function Toolbar() {
       <button className="tool" title="Rehacer (Ctrl+Shift+Z)" onClick={() => wsClient.send("redo")}>
         ↪
       </button>
+      <button
+        className="tool"
+        title="Exportar lo visible como imagen PNG (para el recap en Discord)"
+        onClick={exportVisiblePng}
+      >
+        📷
+      </button>
       <div className="tool-sep" />
       {role === "dm" && (
         <button
@@ -84,4 +93,28 @@ export default function Toolbar() {
       <ToolOptionsPanel />
     </div>
   );
+}
+
+/** Descarga un PNG de lo que se ve en pantalla, con el fondo compuesto. */
+function exportVisiblePng() {
+  const stage = getNode("stage") as Konva.Stage | undefined;
+  if (!stage) return;
+  const shot = stage.toCanvas({ pixelRatio: 2 });
+  const out = document.createElement("canvas");
+  out.width = shot.width;
+  out.height = shot.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) return;
+  const st = useStore.getState();
+  ctx.fillStyle = st.grid.backgroundColor ?? "#16181d";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(shot, 0, 0);
+  out.toBlob((blob) => {
+    if (!blob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${st.sceneName || "escena"}.png`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, "image/png");
 }

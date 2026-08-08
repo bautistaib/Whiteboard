@@ -12,6 +12,7 @@ import GridLayer from "./GridLayer";
 import OverlayLayer, { type Preview } from "./OverlayLayer";
 import TokenContextMenu from "./TokenContextMenu";
 import TokenLayer from "./TokenLayer";
+import { registerNode } from "./nodeRegistry";
 
 interface Point {
   x: number;
@@ -61,6 +62,12 @@ export default function Board() {
     });
     obs.observe(el);
     return () => obs.disconnect();
+  }, []);
+
+  // el stage queda registrado para la exportación a PNG (Toolbar)
+  useEffect(() => {
+    registerNode("stage", stageRef.current);
+    return () => registerNode("stage", null);
   }, []);
 
   const worldPos = (): Point => {

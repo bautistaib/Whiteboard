@@ -58,7 +58,7 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 
 ## Qué tiene
 
-- **Campañas y escenas persistentes**: cerrar el navegador o reiniciar el server no pierde nada. El DM puede tener varias escenas y cambiar en vivo; todos los clientes siguen la escena activa.
+- **Campañas y escenas persistentes**: cerrar el navegador o reiniciar el server no pierde nada. El DM puede tener varias escenas y cambiar en vivo; todos los clientes siguen la escena activa. Las escenas se pueden borrar (✕ en la pestaña) y las campañas también (botón *Borrar* en la página inicial).
 - **Canvas en tiempo real**: mover un token o dibujar se ve al instante en los demás. Cada uno tiene su propia cámara (pan y zoom independientes). Se ven los cursores de los demás con su nombre.
 - **Grilla cuadrada o hexagonal** (flat-top y pointy-top): tamaño, color, opacidad, snap-to-grid y calibración sobre el mapa (offset + tamaño de celda, con preview en vivo).
 - **Medición**: click y arrastrar muestra distancia en celdas y metros (configurable, default 1,5 m/celda; en hex usa distancia hexagonal real).
@@ -83,6 +83,8 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 | Multi-selección | Arrastrar un rectángulo o Shift+click |
 | Volver a la escena anterior | Alt + flecha izquierda |
 | Duplicar token | Ctrl+D |
+| Exportar lo visible como PNG | Botón 📷 de la barra de herramientas (ideal para el recap en Discord) |
+| Borrar una escena | ✕ en la pestaña de la escena (solo DM, no la activa) |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Shift+Z |
 | Borrar selección | Supr |
 | Cambiar de herramienta | V/H/P/R/O/L/A/T/E/M |

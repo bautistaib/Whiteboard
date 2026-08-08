@@ -51,6 +51,8 @@ export default function JoinPage() {
             const trimmed = name.trim();
             if (!trimmed) return;
             localStorage.setItem("ttrpg:name", trimmed);
+            // recordar el token de DM: la home lo usa para listar/crear campañas
+            if (info.role === "dm") localStorage.setItem("ttrpg:dmToken", token);
             setSession({ token, role: info.role, name: trimmed, clientId: getClientId() });
             setJoined(true);
           }}

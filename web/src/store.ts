@@ -100,6 +100,8 @@ interface BoardState {
   campaignName: string;
   connected: boolean;
   snapshotReceived: boolean;
+  /** cierre fatal del WS (link inválido o campaña borrada): no reconectar */
+  fatalReason: string | null;
 
   // escena
   sceneId: string;
@@ -173,6 +175,7 @@ export const useStore = create<BoardState>((set, get) => ({
   campaignName: "",
   connected: false,
   snapshotReceived: false,
+  fatalReason: null,
 
   sceneId: "",
   sceneName: "",
@@ -289,13 +292,17 @@ export const useStore = create<BoardState>((set, get) => ({
   removePing: (id) => set((st) => ({ pings: st.pings.filter((p) => p.id !== id) })),
 
   setSceneUpdate: (msg) =>
-    set({
+    set((st) => ({
       scenes: msg.scenes,
       sceneId: msg.scene.id,
       sceneName: msg.scene.name,
       grid: normalizeGridConfig(msg.scene.grid),
       backgroundAssetId: msg.scene.backgroundAssetId ?? null,
-    }),
+      // la escena a la que apunta Alt+Izq pudo haberse borrado
+      previousSceneId: msg.scenes.some((s: SceneSummary) => s.id === st.previousSceneId)
+        ? st.previousSceneId
+        : null,
+    })),
 
   setLibrary: (lib) => set({ library: lib }),
   setTunnelUrl: (url) => set({ tunnelUrl: url }),

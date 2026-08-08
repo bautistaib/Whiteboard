@@ -114,6 +114,154 @@ def test_scene_switch_sends_fresh_snapshot_to_all(client, campaign):
             assert [o["id"] for o in snap_back["objects"]] == ["tok-esc1"]
 
 
+def test_ops_after_switch_apply_to_new_scene(client, campaign):
+    """Regresión: la conexión no debe quedar atada a la escena vieja tras un
+    scene.switch (si no, los objetos nuevos se persisten en la escena anterior
+    y las ops sobre objetos de la escena nueva se rechazan)."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        dm.receive_json()  # snapshot
+        dm.receive_json()  # tunnel.url
+        dm.receive_json()  # presence
+
+        dm.send_json({"type": "scene.create", "opId": "1", "payload": {"id": "s2", "name": "Nueva"}})
+        _drain_until(dm, "scene.update")
+        dm.send_json({"type": "scene.switch", "opId": "2", "payload": {"sceneId": "s2"}})
+        snap = _drain_until(dm, "scene.snapshot")
+        assert snap["scene"]["id"] == "s2"
+
+        # crear DESPUÉS del switch: debe persistir en la escena nueva
+        dm.send_json(
+            {"type": "token.add", "opId": "3", "payload": {"id": "tok-new", "data": {"x": 1, "y": 2}}}
+        )
+        _drain_until(dm, "op")
+        assert state.objects["tok-new"].scene_id == "s2"
+
+        # modificar ese objeto: la validación debe usar la escena activa
+        dm.send_json({"type": "token.move", "opId": "4", "payload": {"id": "tok-new", "x": 5, "y": 6}})
+        msg = _drain_until(dm, "op")
+        assert msg["op"]["type"] == "token.move"
+        data = json.loads(state.objects["tok-new"].data_json)
+        assert (data["x"], data["y"]) == (5, 6)
+
+
+def test_player_ops_after_switch_apply_to_new_scene(client, campaign):
+    """Misma regresión para un jugador conectado antes del switch."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        dm.receive_json()
+        dm.receive_json()
+        dm.receive_json()
+        with client.websocket_connect(
+            f"/ws/{campaign['player_token']}?name=Ana&clientId=c1"
+        ) as player:
+            player.receive_json()
+            player.receive_json()
+            dm.receive_json()  # presence (player join)
+
+            dm.send_json({"type": "scene.create", "opId": "1", "payload": {"id": "s2", "name": "Nueva"}})
+            _drain_until(dm, "scene.update")
+            dm.send_json({"type": "scene.switch", "opId": "2", "payload": {"sceneId": "s2"}})
+            _drain_until(dm, "scene.snapshot")
+            _drain_until(player, "scene.snapshot")
+
+            dm.send_json(
+                {"type": "token.add", "opId": "3", "payload": {"id": "tok-s2", "data": {"x": 0, "y": 0}}}
+            )
+            _drain_until(player, "op")
+            # el add post-switch debe persistir en la escena nueva
+            assert state.objects["tok-s2"].scene_id == "s2"
+
+            # el jugador mueve el token de la escena nueva: debe aceptarse
+            player.send_json({"type": "token.move", "opId": "4", "payload": {"id": "tok-s2", "x": 9, "y": 9}})
+            msg = _drain_until(player, "op")
+            assert msg["op"]["type"] == "token.move"
+            data = json.loads(state.objects["tok-s2"].data_json)
+            assert (data["x"], data["y"]) == (9, 9)
+
+
+def test_scene_delete(client, campaign):
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        snap = dm.receive_json()
+        scene1 = snap["scene"]["id"]
+        dm.receive_json()
+        dm.receive_json()
+
+        # no se puede borrar la única/activa escena
+        dm.send_json({"type": "scene.delete", "opId": "1", "payload": {"sceneId": scene1}})
+        msg = _drain_until(dm, "error")
+        assert "activa" in msg["reason"] or "última" in msg["reason"]
+
+        # crear s2, ponerle un objeto, volver a scene1 y borrar s2
+        dm.send_json({"type": "scene.create", "opId": "2", "payload": {"id": "s2", "name": "Temp"}})
+        _drain_until(dm, "scene.update")
+        dm.send_json({"type": "scene.switch", "opId": "3", "payload": {"sceneId": "s2"}})
+        _drain_until(dm, "scene.snapshot")
+        dm.send_json(
+            {"type": "token.add", "opId": "4", "payload": {"id": "tok-temp", "data": {"x": 0, "y": 0}}}
+        )
+        _drain_until(dm, "op")
+        dm.send_json({"type": "scene.switch", "opId": "5", "payload": {"sceneId": scene1}})
+        _drain_until(dm, "scene.snapshot")
+
+        dm.send_json({"type": "scene.delete", "opId": "6", "payload": {"sceneId": "s2"}})
+        msg = _drain_until(dm, "scene.update")
+        assert [s["id"] for s in msg["scenes"]] == [scene1]
+        assert "s2" not in state.scenes
+        assert "tok-temp" not in state.objects  # cascada de objetos
+
+        # la conexión sigue viva y la escena activa intacta
+        dm.send_json(
+            {"type": "token.add", "opId": "7", "payload": {"id": "tok-ok", "data": {"x": 0, "y": 0}}}
+        )
+        _drain_until(dm, "op")
+        assert state.objects["tok-ok"].scene_id == scene1
+
+
+def test_scene_delete_requires_dm(client, campaign):
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        dm.receive_json()
+        dm.receive_json()
+        dm.receive_json()
+        dm.send_json({"type": "scene.create", "opId": "1", "payload": {"id": "s2", "name": "Temp"}})
+        _drain_until(dm, "scene.update")
+        with client.websocket_connect(
+            f"/ws/{campaign['player_token']}?name=Ana&clientId=c1"
+        ) as player:
+            player.receive_json()
+            player.receive_json()
+            player.send_json({"type": "scene.delete", "opId": "2", "payload": {"sceneId": "s2"}})
+            msg = _drain_until(player, "error")
+            assert "DM" in msg["reason"]
+        assert "s2" in state.scenes
+
+
+def test_scene_switch_to_missing_scene_is_rejected(client, campaign):
+    """Un switch a una escena borrada/inexistente es un error limpio,
+    no una excepción que tumba la conexión."""
+    with client.websocket_connect(
+        f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"
+    ) as dm:
+        dm.receive_json()
+        dm.receive_json()
+        dm.receive_json()
+        dm.send_json({"type": "scene.switch", "opId": "1", "payload": {"sceneId": "nope"}})
+        msg = _drain_until(dm, "error")
+        assert "inexistente" in msg["reason"]
+        # la conexión sigue viva
+        dm.send_json(
+            {"type": "token.add", "opId": "2", "payload": {"id": "tok1", "data": {"x": 0, "y": 0}}}
+        )
+        _drain_until(dm, "op")
+        assert "tok1" in state.objects
+
+
 def test_duplicate_broadcasts_as_add(client, campaign):
     with client.websocket_connect(
         f"/ws/{campaign['dm_token']}?name=DM&clientId=dm1"

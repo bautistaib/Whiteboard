@@ -62,6 +62,8 @@ Server-autoritativo, snapshot + deltas (sin CRDT):
 4. **Optimistic updates solo para drags propios** (fluidez); el resto espera el broadcast.
 5. Reconexión: backoff exponencial; al reconectar llega snapshot fresco que **pisa el estado local**; las ops se encolan hasta que llega el snapshot (nunca se envían antes).
 6. Creates llevan uuid generado por el cliente → retries idempotentes.
+7. **La escena activa se re-resuelve en cada mensaje** (`state.active_scene`), no se ata a la conexión: un `scene.switch` del DM no puede dejar conexiones operando sobre la escena vieja.
+8. Cierres fatales: `4401` (token inválido) y `4409` (campaña borrada / sin escena activa) **no se reconectan**; el cliente muestra el motivo.
 
 ### Catálogo de ops
 
@@ -80,7 +82,7 @@ Objetos (persisten, entran al undo):
 | `text.add/update/remove` | | |
 | `aoe.add/update/remove` | | circle/cone/line, size_cells, rotation |
 
-Escena (solo DM, no entran al undo): `scene.switch/create/rename/setGrid/setBackground`. `switch` manda snapshot fresco a toda la sala; el resto manda `scene.update`.
+Escena (solo DM, no entran al undo): `scene.switch/create/rename/delete/setGrid/setBackground`. `switch` manda snapshot fresco a toda la sala; el resto manda `scene.update`. `delete` borra la escena con sus objetos; no permite borrar la escena activa ni la última. `switch`/`rename`/`delete` a una escena inexistente se rechazan con error limpio (no tumban la conexión).
 
 Meta: `undo` / `redo`.
 
@@ -100,6 +102,9 @@ Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync
 - **Borrador**: click simple = borrar objeto entero; arrastre = borrado parcial de trazos (los puntos del path bajo el cursor se eliminan y el path se divide en segmentos: un `draw.remove` + un `draw.add` por segmento). `eraseFlag.ts` evita que el click posterior al arrastre borre el objeto entero por accidente.
 - **Opciones de herramienta**: panel contextual (`ToolOptionsPanel`) visible con cualquier herramienta de dibujo; el grosor seleccionado también define el tamaño del borrador.
 - **Permisos por defecto**: `playersMoveAny` default `true` (cualquiera mueve cualquier token); el DM lo restringe desde el panel de grilla.
+- **Drag en grupo**: todos los miembros de la selección streamean su `token.move` (throttled por id), no solo el líder — el grupo se ve moverse en vivo en los demás clientes.
+- **Duplicar**: la celda destino se busca con el `GridSystem` activo (`snap`/`cellOf`), así funciona en cuadrada y hex; el set de celdas ocupadas es compartido entre los clones de un mismo batch (nunca caen dos en la misma celda).
+- **Export PNG**: el botón 📷 (Toolbar) captura el `Stage` (registrado en `nodeRegistry` como `"stage"`) vía `toCanvas` y lo compone sobre el `backgroundColor` de la escena — exporta exactamente lo visible en pantalla.
 
 ### Undo por usuario
 
@@ -116,6 +121,12 @@ Interfaz idéntica en server (`app/grid.py`) y cliente (`web/src/grid/`): `cellO
 - **Cuadrada**: snap al centro de celda; distancia Chebyshev (diagonales = 1); línea supercover para `cellsBetween`.
 - **Hexagonal**: coordenadas **axiales** con redondeo cúbico; `cellSize` = ancho visual del hex (flat: `2·size`, pointy: `√3·size`); distancia hexagonal `(|dq|+|dr|+|dq+dr|)/2`, no euclídea; línea por lerp cúbico.
 - **Calibración**: `offsetX/offsetY` se aplican antes del redondeo (`cellOf` resta el offset, `cellCenter` lo suma). Es la matemática más delicada del proyecto — está cubierta por tests con casos conocidos (`tests/test_grid.py`); tocarla sin correr esos tests es mala idea.
+
+### REST de campañas y acceso
+
+- `POST /api/campaigns` — crea campaña. La primera del server es libre (bootstrap); si ya hay campañas exige `dm` (token de DM de una existente) en el body, para que un jugador no pueda crear campañas ni spam.
+- `GET /api/campaigns?dm=<token>` — lista con links de DM/jugador. Misma regla: sin token de DM válido → 403 (los links de DM no pueden quedar expuestos a cualquiera que abra la home). La web guarda el token de DM en `localStorage` (`ttrpg:dmToken`) al entrar como DM y lo manda solo.
+- `DELETE /api/campaigns/<dm_token>` — borra la campaña en cascada (escenas, objetos, personajes/variantes, assets **y sus archivos**, tokens de acceso, pilas de undo) y cierra la sala (WS `4409`). Solo con el token de DM de esa campaña.
 
 ### Uploads
 
@@ -152,7 +163,7 @@ Para probar el server sirviendo el bundle (modo producción): `npm run build` en
 
 ```powershell
 cd server
-.\.venv\Scripts\pytest            # 75 tests
+.\.venv\Scripts\pytest            # 87 tests
 npx pyright                       # type checking (config canónica en pyrightconfig.json)
 
 cd web
@@ -166,8 +177,8 @@ Cobertura de tests actual:
 | Grilla | `test_grid.py` | snap/centros con y sin offset (cuadrada, hex flat y pointy), distancia Chebyshev y hexagonal (casos conocidos), `cellsBetween` (rectas, diagonales, sin duplicados, adyacencia), factory |
 | Ops y permisos | `test_ops_undo.py` | apply de cada acción, idempotencia por uuid, permisos DM/jugador/propio/ajeno/`playersMoveAny`, objetos de otra escena, generación de inversas |
 | Undo | `test_undo.py` | ediciones intercaladas de 2 usuarios, undo de borrado (recrear), undo de movido-y-borrado (descartar y seguir), redo, invalidación de redo, LWW, pilas por usuario |
-| REST/WS | `test_api.py` | crear campaña, resolución de tokens, WS inválido, snapshot, broadcast (incluye emisor, seq), reconexión con resync, op rechazada, undo por WS, uploads (WebP, downscale 512/4096, >10 MB, imagen inválida), **round-trip de persistencia** (flush → estado fresco idéntico) |
-| Escenas | `test_ws_scenes.py` | create/rename/setGrid/setBackground, switch con snapshot fresco a todos, objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
+| REST/WS | `test_api.py` | crear campaña (bootstrap libre, siguientes exigen DM), listar campañas (gate DM), borrado de campaña (cascada completa + archivos + undo + cierre de sala), resolución de tokens, WS inválido, snapshot, broadcast (incluye emisor, seq), reconexión con resync, op rechazada, undo por WS, uploads (WebP, downscale 512/4096, >10 MB, imagen inválida), **round-trip de persistencia** (flush → estado fresco idéntico) |
+| Escenas | `test_ws_scenes.py` | create/rename/delete/setGrid/setBackground, switch con snapshot fresco a todos, **ops post-switch aplican sobre la escena nueva** (regresión: escena stale), switch a escena inexistente (error limpio), objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
 | Biblioteca | `test_library.py` | personaje+variante automáticos, variante en personaje existente, permisos de borrado, cascada (variantes + personaje vacío), borrado de archivo, path traversal, `/api/tunnel` solo DM |
 | Túnel/flush | `test_tunnel.py` | regex de URL sobre salida real de cloudflared, falsos positivos, flush solo-dirty, add+delete en la misma ventana |
 

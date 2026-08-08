@@ -17,6 +17,7 @@ class WSClient {
   connect(token: string, name: string, clientId: string) {
     this.token = token;
     this.closedByUser = false;
+    useStore.setState({ fatalReason: null });
     this.open(name, clientId);
   }
 
@@ -101,12 +102,24 @@ class WSClient {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (this.heartbeatTimer !== null) {
         clearInterval(this.heartbeatTimer);
         this.heartbeatTimer = null;
       }
       useStore.setState({ connected: false, snapshotReceived: false });
+      // cierres fatales: el server rechazó el link o la campaña dejó de
+      // existir — reconectar sería un loop inútil
+      if (ev.code === 4401 || ev.code === 4409) {
+        this.closedByUser = true;
+        useStore.setState({
+          fatalReason:
+            ev.code === 4401
+              ? "Este link ya no es válido."
+              : "La campaña ya no está disponible (pudo haber sido borrada).",
+        });
+        return;
+      }
       if (!this.closedByUser) {
         setTimeout(() => {
           // reconectar: el snapshot nuevo pisa el estado optimista

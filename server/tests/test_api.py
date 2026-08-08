@@ -8,6 +8,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from starlette.websockets import WebSocketDisconnect
 
 from app import db
 from app.main import create_app
@@ -46,9 +47,12 @@ def test_create_campaign_returns_two_links(client, campaign):
 
 
 def test_list_campaigns_includes_existing(client, campaign):
-    # crear una segunda campaña
-    client.post("/api/campaigns", json={"name": "Otra"})
-    resp = client.get("/api/campaigns")
+    # crear una segunda campaña (con prueba de DM: ya hay campañas)
+    resp = client.post(
+        "/api/campaigns", json={"name": "Otra", "dm": campaign["dm_token"]}
+    )
+    assert resp.status_code == 200
+    resp = client.get("/api/campaigns", params={"dm": campaign["dm_token"]})
     assert resp.status_code == 200
     names = [c["name"] for c in resp.json()]
     assert "Mesa de prueba" in names
@@ -57,6 +61,105 @@ def test_list_campaigns_includes_existing(client, campaign):
     first = resp.json()[0]
     assert first["dm_url"].startswith("/dm/")
     assert first["player_url"].startswith("/j/")
+
+
+def test_campaign_admin_endpoints_require_dm(client, campaign):
+    """Los links de DM no pueden quedar expuestos a cualquiera (jugadores)."""
+    # listar sin token / con token de jugador → prohibido
+    assert client.get("/api/campaigns").status_code == 403
+    assert (
+        client.get("/api/campaigns", params={"dm": campaign["player_token"]}).status_code
+        == 403
+    )
+    assert client.get("/api/campaigns", params={"dm": "cualquiera"}).status_code == 403
+    # crear campañas extra sin prueba de DM → prohibido
+    assert client.post("/api/campaigns", json={"name": "Colada"}).status_code == 403
+    assert (
+        client.post(
+            "/api/campaigns", json={"name": "Colada", "dm": campaign["player_token"]}
+        ).status_code
+        == 403
+    )
+    assert len(state.campaigns) == 1
+
+
+def test_first_campaign_bootstrap_is_open(client):
+    """Sin campañas previas, cualquiera puede crear la primera (setup inicial)."""
+    assert client.get("/api/campaigns").status_code == 200
+    resp = client.post("/api/campaigns", json={"name": "Primera"})
+    assert resp.status_code == 200
+
+
+def test_delete_campaign_cascades(client, campaign):
+    """Borrar una campaña elimina escenas, objetos, biblioteca, tokens y undo."""
+    from app import config
+    from app.undo import undo_manager
+
+    dm = campaign["dm_token"]
+    player = campaign["player_token"]
+    resolved = state.resolve_token(dm)
+    assert resolved is not None
+    campaign_id = resolved[0]
+
+    # sembrar contenido: asset (+archivo), personaje+variante, objeto, undo
+    asset = db.Asset(
+        id="a1", campaign_id=campaign_id, filename="mapa.webp", kind="map"
+    )
+    state.assets[asset.id] = asset
+    config.ensure_dirs()
+    (config.ASSETS_DIR / "mapa.webp").write_bytes(b"fake")
+    char = db.Character(id="ch1", campaign_id=campaign_id, name="Druida")
+    state.characters[char.id] = char
+    variant = db.CharacterVariant(
+        id="v1", character_id="ch1", asset_id="a1", label="Base"
+    )
+    state.variants[variant.id] = variant
+    scene_id = next(
+        s.id for s in state.scenes.values() if s.campaign_id == campaign_id
+    )
+    obj = db.SceneObject(
+        id="o1", scene_id=scene_id, type="token", data_json="{}"
+    )
+    state.objects[obj.id] = obj
+    undo_manager.push_undo(campaign_id, "c1", {"type": "token.remove", "payload": {"id": "o1"}})
+
+    # jugador no puede borrar
+    assert client.delete(f"/api/campaigns/{player}").status_code == 403
+    # token inválido → 404
+    assert client.delete("/api/campaigns/nope").status_code == 404
+
+    assert client.delete(f"/api/campaigns/{dm}").status_code == 200
+    assert not state.campaigns
+    assert not state.scenes
+    assert not state.objects
+    assert not state.assets
+    assert not state.characters
+    assert not state.variants
+    assert state.resolve_token(dm) is None
+    assert state.resolve_token(player) is None
+    assert undo_manager.pop_undo(campaign_id, "c1") is None
+    assert not (config.ASSETS_DIR / "mapa.webp").exists()
+
+    # round-trip de persistencia: nada queda en la DB
+    fresh = AppState()
+    fresh.load_from_db()
+    assert not fresh.campaigns
+    assert not fresh.scenes
+    assert not fresh.objects
+    assert not fresh.assets
+
+
+def test_delete_campaign_closes_room(client, campaign):
+    """Los clientes conectados a una campaña borrada quedan desconectados."""
+    with client.websocket_connect(
+        f"/ws/{campaign['player_token']}?name=Ana&clientId=c1"
+    ) as sock:
+        sock.receive_json()  # snapshot
+        sock.receive_json()  # presence
+        resp = client.delete(f"/api/campaigns/{campaign['dm_token']}")
+        assert resp.status_code == 200
+        with pytest.raises(WebSocketDisconnect):
+            sock.receive_json()
 
 
 def test_settings_persist_default_grid(client):

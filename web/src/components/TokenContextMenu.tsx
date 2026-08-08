@@ -3,7 +3,7 @@ import { useState } from "react";
 import { uploadImage } from "../api";
 import { BADGE_PRESETS, useStore } from "../store";
 import { wsClient } from "../ws";
-import { prefixOf } from "../pages/BoardPage";
+import { prefixOf, duplicateTokens } from "../pages/BoardPage";
 import { getNode } from "./nodeRegistry";
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -151,14 +151,10 @@ export default function TokenContextMenu() {
             )}
             <div
               className="menu-item"
-              onClick={() =>
-                send("token.duplicate", {
-                  id: obj.id,
-                  newId: crypto.randomUUID(),
-                  x: (d.x ?? 0) + 64,
-                  y: d.y ?? 0,
-                })
-              }
+              onClick={() => {
+                duplicateTokens([obj.id]);
+                close();
+              }}
             >
               Duplicar
             </div>
