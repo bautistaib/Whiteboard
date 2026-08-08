@@ -1,7 +1,8 @@
-import { useStore, type Tool } from "../store";
+import { useState } from "react";
+import { lsGet, lsSet, useStore, type Tool } from "../store";
 
 /** Herramientas que tienen opciones de color/grosor. */
-const TOOLS_WITH_OPTIONS: Tool[] = [
+export const TOOLS_WITH_OPTIONS: Tool[] = [
   "pencil",
   "rect",
   "circle",
@@ -29,6 +30,29 @@ const COLOR_SWATCHES = [
 
 const WIDTH_PRESETS = [2, 4, 8, 16];
 
+const ANGLE_PRESETS = [30, 45, 60, 90];
+
+const MAX_PRESETS = 24;
+
+/** Presets de color guardados; fallback a los swatches por defecto. */
+function loadPresets(): string[] {
+  const raw = lsGet("ttrpg:colorPresets");
+  if (raw) {
+    try {
+      const arr: unknown = JSON.parse(raw);
+      if (
+        Array.isArray(arr) &&
+        arr.every((c) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c as string))
+      ) {
+        return arr as string[];
+      }
+    } catch {
+      // JSON inválido: se usan los defaults
+    }
+  }
+  return COLOR_SWATCHES;
+}
+
 /** Panel contextual de opciones: color + grosor (slider y presets). */
 export default function ToolOptionsPanel() {
   const tool = useStore((s) => s.tool);
@@ -38,6 +62,23 @@ export default function ToolOptionsPanel() {
   const setDrawColor = useStore((s) => s.setDrawColor);
   const drawWidth = useStore((s) => s.drawWidth);
   const setDrawWidth = useStore((s) => s.setDrawWidth);
+  const aoeAngle = useStore((s) => s.aoeAngle);
+  const setAoeAngle = useStore((s) => s.setAoeAngle);
+  const [presets, setPresets] = useState<string[]>(loadPresets);
+
+  const savePresets = (next: string[]) => {
+    setPresets(next);
+    lsSet("ttrpg:colorPresets", JSON.stringify(next));
+  };
+
+  const addPreset = () => {
+    if (presets.includes(drawColor)) return;
+    // máximo 24: llena, el botón + se deshabilita (click derecho quita colores)
+    if (presets.length >= MAX_PRESETS) return;
+    savePresets([...presets, drawColor]);
+  };
+
+  const removePreset = (c: string) => savePresets(presets.filter((p) => p !== c));
 
   if (!TOOLS_WITH_OPTIONS.includes(tool)) return null;
   if (!open) return null;
@@ -51,15 +92,31 @@ export default function ToolOptionsPanel() {
         </button>
       </div>
       <div className="swatches">
-        {COLOR_SWATCHES.map((c) => (
+        {presets.map((c) => (
           <button
             key={c}
             className={`swatch ${drawColor === c ? "active" : ""}`}
             style={{ background: c }}
-            title={c}
+            title={`${c} — Click derecho para quitar`}
             onClick={() => setDrawColor(c)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              removePreset(c);
+            }}
           />
         ))}
+        <button
+          className="swatch add"
+          title={
+            presets.length >= MAX_PRESETS
+              ? "Lista llena — click derecho en un color para quitarlo"
+              : "Guardar color actual"
+          }
+          disabled={presets.length >= MAX_PRESETS}
+          onClick={addPreset}
+        >
+          +
+        </button>
         <input
           type="color"
           className="swatch custom"
@@ -91,6 +148,34 @@ export default function ToolOptionsPanel() {
           </button>
         ))}
       </div>
+      {tool === "aoe-cone" && (
+        <>
+          <label className="width-row">
+            Ángulo
+            <input
+              type="range"
+              min={15}
+              max={120}
+              step={5}
+              value={aoeAngle}
+              onChange={(e) => setAoeAngle(Number(e.target.value))}
+            />
+            <span className="muted small">{aoeAngle}°</span>
+          </label>
+          <div className="width-presets">
+            {ANGLE_PRESETS.map((a) => (
+              <button
+                key={a}
+                className={`width-preset ${aoeAngle === a ? "active" : ""}`}
+                title={`Ángulo ${a}°`}
+                onClick={() => setAoeAngle(a)}
+              >
+                <span className="muted small">{a}°</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

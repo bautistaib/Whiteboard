@@ -2,11 +2,38 @@ import { create } from "zustand";
 import { defaultGridConfig, normalizeGridConfig } from "./grid";
 import type { GridConfig } from "./grid";
 
+/** Lectura/escritura segura de localStorage (nunca rompe si no está disponible). */
+export function lsGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function lsSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // almacenamiento no disponible: se ignora
+  }
+}
+
+function initialDrawColor(): string {
+  const c = lsGet("ttrpg:drawColor");
+  return c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#ff5252";
+}
+
+function initialDrawWidth(): number {
+  const n = Number(lsGet("ttrpg:drawWidth"));
+  return Number.isFinite(n) && n >= 1 && n <= 40 ? n : 4;
+}
+
 export type Role = "dm" | "player";
 
 export interface SceneObj {
   id: string;
-  type: string; // token | path | shape | text | aoe
+  type: string; // token | path | shape | text | aoe | group
   z: number;
   owner: string;
   data: Record<string, any>;
@@ -122,6 +149,8 @@ interface BoardState {
   tool: Tool;
   drawColor: string;
   drawWidth: number;
+  /** apertura del cono AoE (grados) */
+  aoeAngle: number;
   selection: string[];
   contextMenu: { objId: string; x: number; y: number } | null;
   measure: { ax: number; ay: number; bx: number; by: number } | null;
@@ -152,6 +181,7 @@ interface BoardState {
   setTool: (t: Tool) => void;
   setDrawColor: (c: string) => void;
   setDrawWidth: (w: number) => void;
+  setAoeAngle: (a: number) => void;
   setSelection: (ids: string[]) => void;
   toggleSelected: (id: string) => void;
   setContextMenu: (m: { objId: string; x: number; y: number } | null) => void;
@@ -192,8 +222,9 @@ export const useStore = create<BoardState>((set, get) => ({
   camera: { x: 0, y: 0, scale: 1 },
   followDm: false,
   tool: "select",
-  drawColor: "#ff5252",
-  drawWidth: 4,
+  drawColor: initialDrawColor(),
+  drawWidth: initialDrawWidth(),
+  aoeAngle: 60,
   selection: [],
   contextMenu: null,
   measure: null,
@@ -239,6 +270,7 @@ export const useStore = create<BoardState>((set, get) => ({
           : type.startsWith("draw") ? "path"
           : type.startsWith("shape") ? "shape"
           : type.startsWith("text") ? "text"
+          : type.startsWith("group") ? "group"
           : "aoe";
         objects[payload.id] = {
           id: payload.id,
@@ -310,8 +342,15 @@ export const useStore = create<BoardState>((set, get) => ({
   setCamera: (cam) => set({ camera: cam }),
   setFollowDm: (v) => set({ followDm: v }),
   setTool: (t) => set({ tool: t, selection: [], contextMenu: null, measure: null, toolOptionsOpen: true }),
-  setDrawColor: (c) => set({ drawColor: c }),
-  setDrawWidth: (w) => set({ drawWidth: w }),
+  setDrawColor: (c) => {
+    lsSet("ttrpg:drawColor", c);
+    set({ drawColor: c });
+  },
+  setDrawWidth: (w) => {
+    lsSet("ttrpg:drawWidth", String(w));
+    set({ drawWidth: w });
+  },
+  setAoeAngle: (a) => set({ aoeAngle: a }),
 
   setSelection: (ids) => set({ selection: ids }),
   toggleSelected: (id) =>

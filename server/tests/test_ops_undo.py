@@ -173,3 +173,32 @@ def test_apply_inverse_discards_missing_object(campaign):
         {"type": "token.move", "payload": {"id": "ghost", "x": 1, "y": 1}},
     )
     assert ok is False
+
+
+# ---- group (dibujos compuestos) ----------------------------------------------
+
+
+def test_group_add_update_remove_and_undo(campaign):
+    scene = campaign["scene"]
+    parts = [
+        {"type": "path", "data": {"x": -10, "y": 0, "points": [0, 0, 20, 20]}},
+        {"type": "text", "data": {"x": 5, "y": 5, "text": "hola"}},
+    ]
+    ops.apply(state, scene, "dm-client", "group.add",
+              {"id": "g1", "data": {"x": 50, "y": 50, "rotation": 0, "parts": parts}})
+    obj = state.objects["g1"]
+    assert obj.type == "group"
+    assert json.loads(obj.data_json)["parts"] == parts
+
+    ops.apply(state, scene, "dm-client", "group.update",
+              {"id": "g1", "patch": {"x": 99, "rotation": 90}})
+    data = json.loads(state.objects["g1"].data_json)
+    assert data["x"] == 99
+    assert data["rotation"] == 90
+
+    # la inversa del add es remove (undo genérico por prefijo)
+    inv = ops.compute_inverse(state, scene, "group.add", {"id": "g1", "data": {}})
+    assert inv == {"type": "group.remove", "payload": {"id": "g1"}}
+
+    ops.apply(state, scene, "dm-client", "group.remove", {"id": "g1"})
+    assert "g1" not in state.objects

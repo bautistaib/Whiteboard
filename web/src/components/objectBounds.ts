@@ -19,9 +19,14 @@ export function objectBounds(o: SceneObj, cellSize: number): Bounds {
   const y = d.y ?? 0;
   if (o.type === "token") {
     const half = ((d.size_cells ?? 1) * cellSize) / 2;
-    return { minX: x - half, minY: y - half, maxX: x + half, maxY: y + half };
+    return {
+      minX: x - half * (d.scaleX ?? 1),
+      minY: y - half * (d.scaleY ?? 1),
+      maxX: x + half * (d.scaleX ?? 1),
+      maxY: y + half * (d.scaleY ?? 1),
+    };
   }
-  // scaleX/scaleY del nodo (resize libre) — los tokens no escalan
+  // scaleX/scaleY del nodo (resize libre)
   const sx = d.scaleX ?? 1;
   const sy = d.scaleY ?? 1;
   if (o.type === "path") {
@@ -69,6 +74,22 @@ export function objectBounds(o: SceneObj, cellSize: number): Bounds {
       maxX: Math.max(x, x + ex),
       maxY: Math.max(y, y + ey),
     };
+  }
+  if (o.type === "group") {
+    // union de bounds de las parts, trasladadas al origen del grupo
+    const parts: { type: string; data: Record<string, any> }[] = d.parts ?? [];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of parts) {
+      const fake: SceneObj = {
+        id: "", type: p.type, z: 0, owner: "",
+        data: { ...p.data, x: (p.data.x ?? 0) + x, y: (p.data.y ?? 0) + y },
+      };
+      const b = objectBounds(fake, cellSize);
+      minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+    }
+    if (!Number.isFinite(minX)) return { minX: x, minY: y, maxX: x, maxY: y };
+    return { minX, minY, maxX, maxY };
   }
   if (o.type === "aoe") {
     const r = (d.size_cells ?? 1) * cellSize;

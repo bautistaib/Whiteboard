@@ -5,6 +5,10 @@ import { BADGE_PRESETS, useStore } from "../store";
 import { wsClient } from "../ws";
 import { prefixOf, duplicateTokens } from "../pages/BoardPage";
 import { getNode } from "./nodeRegistry";
+import { objectBounds } from "./objectBounds";
+
+// tipos que se pueden fusionar en un dibujo compuesto (group)
+const MERGEABLE = new Set(["path", "shape", "text", "group"]);
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -110,6 +114,58 @@ export default function TokenContextMenu() {
       setBusy(false);
       close();
     }
+  };
+
+  // cantidad de objetos fusionables en la selección (para mostrar "Fusionar selección")
+  const mergeableCount = useStore.getState().selection.filter((id) => {
+    const o = objects[id];
+    return o && MERGEABLE.has(o.type);
+  }).length;
+
+  /** Fusiona la selección en un objeto `group` con parts relativas a su origen. */
+  const mergeSelection = () => {
+    const st = useStore.getState();
+    const ids = st.selection.filter((id) => {
+      const o = st.objects[id];
+      return o && MERGEABLE.has(o.type);
+    });
+    if (ids.length < 2) return;
+    // orden por z: las partes conservan el apilado original
+    const objs = ids.map((id) => st.objects[id]).sort((a, b) => a.z - b.z);
+    // aplanar: un group aporta sus parts con su traslación aplicada
+    // (si el group estaba rotado/escalado, las parts se toman sin esa transformación)
+    const flat: { type: string; data: Record<string, any> }[] = [];
+    for (const o of objs) {
+      if (o.type === "group") {
+        const gx = o.data.x ?? 0;
+        const gy = o.data.y ?? 0;
+        for (const p of o.data.parts ?? []) {
+          flat.push({ type: p.type, data: { ...p.data, x: (p.data.x ?? 0) + gx, y: (p.data.y ?? 0) + gy } });
+        }
+      } else {
+        flat.push({ type: o.type, data: { ...o.data } });
+      }
+    }
+    // origen = centro del bbox combinado
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const f of flat) {
+      const b = objectBounds({ id: "", type: f.type, z: 0, owner: "", data: f.data }, st.grid.cellSize);
+      minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+    }
+    if (!Number.isFinite(minX)) return;
+    const ox = (minX + maxX) / 2;
+    const oy = (minY + maxY) / 2;
+    const parts = flat.map((f) => ({
+      type: f.type,
+      data: { ...f.data, x: (f.data.x ?? 0) - ox, y: (f.data.y ?? 0) - oy },
+    }));
+    const newId = crypto.randomUUID();
+    wsClient.send("group.add", { id: newId, data: { x: ox, y: oy, rotation: 0, parts } });
+    // borrar los originales
+    for (const o of objs) wsClient.send(`${prefixOf(o.type)}.remove`, { id: o.id });
+    st.setSelection([newId]);
+    close();
   };
 
   const badges: { emoji: string; label: string; color: string }[] = d.badges ?? [];
@@ -233,7 +289,12 @@ export default function TokenContextMenu() {
             Rotar 45°
           </div>
         )}
-        {obj.type === "path" && (
+        {MERGEABLE.has(obj.type) && mergeableCount >= 2 && (
+          <div className="menu-item" onClick={mergeSelection}>
+            Fusionar selección
+          </div>
+        )}
+        {MERGEABLE.has(obj.type) && (
           <div className="menu-item" onClick={convertToToken}>
             {busy ? "Convirtiendo…" : "Convertir en token"}
           </div>

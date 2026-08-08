@@ -4,22 +4,22 @@ import { useStore, type Tool } from "../store";
 import { wsClient } from "../ws";
 import CalibrationPanel from "./CalibrationPanel";
 import { getNode } from "./nodeRegistry";
-import ToolOptionsPanel from "./ToolOptionsPanel";
+import ToolOptionsPanel, { TOOLS_WITH_OPTIONS } from "./ToolOptionsPanel";
 
-const TOOLS: { id: Tool; label: string; icon: string }[] = [
-  { id: "select", label: "Seleccionar / mover", icon: "⬚" },
-  { id: "pan", label: "Mover cámara", icon: "✋" },
-  { id: "pencil", label: "Lápiz", icon: "✏️" },
-  { id: "rect", label: "Rectángulo", icon: "▭" },
-  { id: "circle", label: "Círculo", icon: "◯" },
-  { id: "line", label: "Línea", icon: "╱" },
-  { id: "arrow", label: "Flecha", icon: "➶" },
-  { id: "text", label: "Texto", icon: "T" },
-  { id: "eraser", label: "Borrador", icon: "🧽" },
-  { id: "measure", label: "Medir distancia", icon: "📏" },
-  { id: "aoe-circle", label: "AoE: círculo", icon: "◎" },
-  { id: "aoe-cone", label: "AoE: cono", icon: "◣" },
-  { id: "aoe-line", label: "AoE: línea", icon: "━" },
+export const TOOLS: { id: Tool; label: string; icon: string; key: string }[] = [
+  { id: "select", label: "Seleccionar / mover", icon: "⬚", key: "V" },
+  { id: "pan", label: "Mover cámara", icon: "✋", key: "H" },
+  { id: "pencil", label: "Lápiz", icon: "✏️", key: "P" },
+  { id: "rect", label: "Rectángulo", icon: "▭", key: "R" },
+  { id: "circle", label: "Círculo", icon: "◯", key: "O" },
+  { id: "line", label: "Línea", icon: "╱", key: "L" },
+  { id: "arrow", label: "Flecha", icon: "➶", key: "A" },
+  { id: "text", label: "Texto", icon: "T", key: "T" },
+  { id: "eraser", label: "Borrador", icon: "🧽", key: "E" },
+  { id: "measure", label: "Medir distancia", icon: "📏", key: "M" },
+  { id: "aoe-circle", label: "AoE: círculo", icon: "◎", key: "1" },
+  { id: "aoe-cone", label: "AoE: cono", icon: "◣", key: "2" },
+  { id: "aoe-line", label: "AoE: línea", icon: "━", key: "3" },
 ];
 
 export default function Toolbar() {
@@ -32,14 +32,14 @@ export default function Toolbar() {
   const setToolOptionsOpen = useStore((s) => s.setToolOptionsOpen);
   const [showGrid, setShowGrid] = useState(false);
 
-  const hasOptions = TOOLS.some((t) => t.id === tool);
+  const hasOptions = TOOLS_WITH_OPTIONS.includes(tool);
 
   return (
     <div className="toolbar">
       {TOOLS.map((t) => (
         <button
           key={t.id}
-          title={t.label}
+          title={`${t.label} (${t.key})`}
           className={`tool ${tool === t.id ? "active" : ""}`}
           onClick={() => setTool(t.id)}
         >

@@ -100,9 +100,10 @@ scenes(id, campaign_id, name, background_asset_id, grid_config_json, is_active, 
 assets(id, campaign_id, filename, kind[token|map|other], uploaded_by, created_at)
 characters(id, campaign_id, name)
 character_variants(id, character_id, asset_id, label, size_cells, sort_order)
-objects(id, scene_id, type[token|path|shape|text|aoe], z_index, owner, data_json, updated_at)
+objects(id, scene_id, type[token|path|shape|text|aoe|group], z_index, owner, data_json, updated_at)
 ```
 - Un token con formas guarda `character_id` + `active_variant_id` en su `data_json`.
+- Un `group` es un dibujo compuesto: su `data_json` guarda `parts` (lista de {type, data} de paths/shapes/textos con coords relativas al origen del grupo). Se crea con "Fusionar selección".
 - Las pilas de undo viven solo en memoria (se pierden al reiniciar el server — aceptable).
 - `data_json` guarda geometría y props específicas por tipo. Flexible y suficiente a esta escala.
 - Persistencia write-through con debounce (~1 s) desde el estado en memoria.

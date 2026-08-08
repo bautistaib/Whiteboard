@@ -57,6 +57,7 @@ export default function BackgroundLayer() {
     <Layer listening={unlocked}>
       <KImage
         ref={imageRef}
+        name="background"
         image={img}
         x={tf.x}
         y={tf.y}
