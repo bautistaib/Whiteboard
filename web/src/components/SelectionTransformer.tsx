@@ -11,13 +11,14 @@ import { getNode } from "./nodeRegistry";
 const ROTATABLE = new Set(["aoe", "shape", "text", "path"]);
 
 /**
- * Handle de rotación libre sobre el objeto seleccionado (selección simple,
- * herramienta select). El Transformer de Konva rota alrededor del centro
- * visual del nodo, así que puede ajustar también x/y: se mandan ambos.
+ * Handle de transformación sobre el objeto seleccionado (selección simple,
+ * herramienta select): rotación libre + resize. El Transformer de Konva
+ * opera con rotation + scaleX/scaleY + x/y; como el render aplica esos
+ * mismos campos, no hace falta "hornear" la geometría por tipo.
  */
 export default function SelectionTransformer() {
   const trRef = useRef<Konva.Transformer>(null);
-  // true mientras el usuario arrastra el handle (no re-sincronizar abajo)
+  // true mientras el usuario arrastra un handle (no re-sincronizar abajo)
   const transforming = useRef(false);
 
   const tool = useStore((s) => s.tool);
@@ -54,15 +55,21 @@ export default function SelectionTransformer() {
   const patch = () => {
     const node = trRef.current?.nodes()[0];
     if (!node) return null;
-    return { rotation: node.rotation(), x: node.x(), y: node.y() };
+    return {
+      rotation: node.rotation(),
+      x: node.x(),
+      y: node.y(),
+      scaleX: node.scaleX(),
+      scaleY: node.scaleY(),
+    };
   };
 
   return (
     <Transformer
       ref={trRef}
-      resizeEnabled={false}
-      flipEnabled={false}
       rotateEnabled
+      resizeEnabled
+      flipEnabled={false}
       anchorSize={8}
       anchorStroke="#4fc3f7"
       borderStroke="#4fc3f7"
@@ -73,7 +80,7 @@ export default function SelectionTransformer() {
         const p = patch();
         if (!p) return;
         useStore.getState().updateObjectLocal(obj.id, p);
-        sendThrottled(`rotate-${obj.id}`, `${prefixOf(obj.type)}.update`, {
+        sendThrottled(`transform-${obj.id}`, `${prefixOf(obj.type)}.update`, {
           id: obj.id,
           patch: p,
         });

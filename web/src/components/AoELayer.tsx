@@ -40,6 +40,8 @@ function AoE({
       x={d.x ?? 0}
       y={d.y ?? 0}
       rotation={d.rotation ?? 0}
+      scaleX={d.scaleX ?? 1}
+      scaleY={d.scaleY ?? 1}
       opacity={0.4}
       ref={(node) => registerNode(obj.id, node)}
       {...handlers}

@@ -262,23 +262,27 @@ export default function Board() {
       const oy = obj.data.y ?? 0;
       const halfWidth = (obj.data.width ?? 4) / 2;
 
-      // el trazo del borrador pasa a coords LOCALES del path (el path puede
-      // estar rotado: mundo = (ox,oy) + rot(rotation)·punto)
+      // el trazo del borrador pasa a coords LOCALES del path. Mundo =
+      // (ox,oy) + rot(rotation)·scale·punto  →  local = scale⁻¹·rot⁻¹·(mundo-(ox,oy))
       const rot = obj.data.rotation ?? 0;
+      const sx = obj.data.scaleX ?? 1;
+      const sy = obj.data.scaleY ?? 1;
       const rad = (-rot * Math.PI) / 180;
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
-      const localStroke =
-        rot === 0
-          ? stroke.map((p) => ({ x: p.x - ox, y: p.y - oy }))
-          : stroke.map((p) => {
-              const dx = p.x - ox;
-              const dy = p.y - oy;
-              return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
-            });
+      const localStroke = stroke.map((p) => {
+        const dx = p.x - ox;
+        const dy = p.y - oy;
+        const rx = dx * cos - dy * sin;
+        const ry = dx * sin + dy * cos;
+        return { x: rx / sx, y: ry / sy };
+      });
 
-      // runs de puntos que sobreviven; el radio incluye la mitad del grosor del trazo
-      const effRadius = radius + halfWidth;
+      // runs de puntos que sobreviven; el radio del borrador también pasa a
+      // local (escala distinta por eje → test elíptico)
+      const er = radius + halfWidth;
+      const erx = er / sx;
+      const ery = er / sy;
       const runs: number[][] = [];
       let current: number[] = [];
       for (let i = 0; i < pts.length; i += 2) {
@@ -288,7 +292,7 @@ export default function Board() {
         for (const p of localStroke) {
           const ddx = p.x - px;
           const ddy = p.y - py;
-          if (ddx * ddx + ddy * ddy < effRadius * effRadius) {
+          if ((ddx * ddx) / (erx * erx) + (ddy * ddy) / (ery * ery) < 1) {
             erased = true;
             break;
           }
@@ -315,6 +319,8 @@ export default function Board() {
           color: obj.data.color,
           width: obj.data.width,
           rotation: rot,
+          scaleX: sx,
+          scaleY: sy,
         };
         const newId = optimisticAdd("path", data);
         wsClient.send("draw.add", { id: newId, data });
