@@ -148,6 +148,8 @@ function AoEPreview({
   const distPx = Math.hypot(dx, dy);
   const cells = Math.max(1, Math.round(distPx / cellSize));
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const aoeAngle = useStore((s) => s.aoeAngle);
+  const lineWidth = useStore((s) => s.drawWidth);
 
   return (
     <Group x={preview.start.x} y={preview.start.y} opacity={0.4}>
@@ -157,8 +159,8 @@ function AoEPreview({
       {preview.tool === "aoe-cone" && (
         <Wedge
           radius={cells * cellSize}
-          angle={60}
-          rotation={angle - 30}
+          angle={aoeAngle}
+          rotation={angle - aoeAngle / 2}
           fill={color}
           stroke={color}
           strokeWidth={2}
@@ -167,14 +169,18 @@ function AoEPreview({
       {preview.tool === "aoe-line" && (
         <Rect
           width={cells * cellSize}
-          height={cellSize / 2}
-          y={-cellSize / 4}
+          height={lineWidth}
+          y={-lineWidth / 2}
           rotation={angle}
           fill={color}
           stroke={color}
           strokeWidth={2}
         />
       )}
+      <Label x={preview.current.x - preview.start.x + 8} y={preview.current.y - preview.start.y - 8}>
+        <Tag fill="#000" opacity={0.8} cornerRadius={4} />
+        <Text text={`${cells} ${cells === 1 ? "celda" : "celdas"}`} fontSize={14} fill="#ffeb3b" padding={6} />
+      </Label>
     </Group>
   );
 }

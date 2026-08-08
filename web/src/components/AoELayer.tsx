@@ -48,10 +48,24 @@ function AoE({
     >
       {d.shape === "circle" && <Circle radius={radius} fill={color} stroke={color} strokeWidth={2} />}
       {d.shape === "cone" && (
-        <Wedge radius={radius} angle={60} fill={color} stroke={color} strokeWidth={2} rotation={-30} />
+        <Wedge
+          radius={radius}
+          angle={d.angle ?? 60}
+          fill={color}
+          stroke={color}
+          strokeWidth={2}
+          rotation={-(d.angle ?? 60) / 2}
+        />
       )}
       {d.shape === "line" && (
-        <Rect width={radius} height={cellSize / 2} y={-cellSize / 4} fill={color} stroke={color} strokeWidth={2} />
+        <Rect
+          width={radius}
+          height={d.width_px ?? cellSize / 2}
+          y={-(d.width_px ?? cellSize / 2) / 2}
+          fill={color}
+          stroke={color}
+          strokeWidth={2}
+        />
       )}
     </Group>
   );
