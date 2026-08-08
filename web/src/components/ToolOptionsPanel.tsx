@@ -1,4 +1,5 @@
-import { useStore, type Tool } from "../store";
+import { useState } from "react";
+import { lsGet, lsSet, useStore, type Tool } from "../store";
 
 /** Herramientas que tienen opciones de color/grosor. */
 const TOOLS_WITH_OPTIONS: Tool[] = [
@@ -29,6 +30,27 @@ const COLOR_SWATCHES = [
 
 const WIDTH_PRESETS = [2, 4, 8, 16];
 
+const MAX_PRESETS = 10;
+
+/** Presets de color guardados; fallback a los swatches por defecto. */
+function loadPresets(): string[] {
+  const raw = lsGet("ttrpg:colorPresets");
+  if (raw) {
+    try {
+      const arr: unknown = JSON.parse(raw);
+      if (
+        Array.isArray(arr) &&
+        arr.every((c) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c as string))
+      ) {
+        return arr as string[];
+      }
+    } catch {
+      // JSON inválido: se usan los defaults
+    }
+  }
+  return COLOR_SWATCHES;
+}
+
 /** Panel contextual de opciones: color + grosor (slider y presets). */
 export default function ToolOptionsPanel() {
   const tool = useStore((s) => s.tool);
@@ -38,6 +60,24 @@ export default function ToolOptionsPanel() {
   const setDrawColor = useStore((s) => s.setDrawColor);
   const drawWidth = useStore((s) => s.drawWidth);
   const setDrawWidth = useStore((s) => s.setDrawWidth);
+  const [presets, setPresets] = useState<string[]>(loadPresets);
+
+  const savePresets = (next: string[]) => {
+    setPresets(next);
+    lsSet("ttrpg:colorPresets", JSON.stringify(next));
+  };
+
+  const addPreset = () => {
+    if (presets.includes(drawColor)) return;
+    // máximo 10: si está lleno, se reemplaza el último
+    savePresets(
+      presets.length >= MAX_PRESETS
+        ? [...presets.slice(0, MAX_PRESETS - 1), drawColor]
+        : [...presets, drawColor],
+    );
+  };
+
+  const removePreset = (c: string) => savePresets(presets.filter((p) => p !== c));
 
   if (!TOOLS_WITH_OPTIONS.includes(tool)) return null;
   if (!open) return null;
@@ -51,15 +91,22 @@ export default function ToolOptionsPanel() {
         </button>
       </div>
       <div className="swatches">
-        {COLOR_SWATCHES.map((c) => (
+        {presets.map((c) => (
           <button
             key={c}
             className={`swatch ${drawColor === c ? "active" : ""}`}
             style={{ background: c }}
-            title={c}
+            title={`${c} — Click derecho para quitar`}
             onClick={() => setDrawColor(c)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              removePreset(c);
+            }}
           />
         ))}
+        <button className="swatch add" title="Guardar color actual" onClick={addPreset}>
+          +
+        </button>
         <input
           type="color"
           className="swatch custom"

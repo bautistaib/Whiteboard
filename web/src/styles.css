@@ -254,6 +254,16 @@ select {
   background: #1d2129;
   border-color: #3a4150;
 }
+.swatch.add {
+  background: #1d2129;
+  border-color: #3a4150;
+  color: #c9d1d9;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .width-presets {
   display: flex;
   gap: 6px;
