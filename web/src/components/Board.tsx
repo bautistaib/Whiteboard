@@ -93,6 +93,8 @@ export default function Board() {
 
   const onWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
+    // con el editor de texto abierto no zoomeamos: quedaría desalineado
+    if (useStore.getState().textEdit) return;
     const stage = stageRef.current!;
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
@@ -136,8 +138,9 @@ export default function Board() {
     }
 
     // click derecho sobre canvas vacío → arrastrar para mover la cámara
+    // (bloqueado mientras se edita texto: el editor quedaría desalineado)
     if (e.evt.button === 2) {
-      if (isEmptyTarget(e)) {
+      if (isEmptyTarget(e) && !useStore.getState().textEdit) {
         const p = stageRef.current!.getPointerPosition();
         if (p) {
           rightPan.current = { sx: p.x, sy: p.y, camX: camera.x, camY: camera.y };
@@ -166,7 +169,11 @@ export default function Board() {
       return;
     }
     if (tool === "text") {
-      if (!isEmptyTarget(e)) return;
+      // ya hay un editor abierto: el blur del textarea lo commitea
+      if (useStore.getState().textEdit) return;
+      // solo canvas vacío o el fondo del mapa; sobre tokens/dibujos/textos no
+      // (esos tienen sus propios handlers; el doble click edita textos)
+      if (!isEmptyTarget(e) && e.target.name() !== "background") return;
       startTextEdit(pos.x, pos.y);
       return;
     }
@@ -539,7 +546,7 @@ export default function Board() {
         y={camera.y}
         scaleX={camera.scale}
         scaleY={camera.scale}
-        draggable={tool === "pan"}
+        draggable={tool === "pan" && !textEdit}
         onDragEnd={onStageDragEnd}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
