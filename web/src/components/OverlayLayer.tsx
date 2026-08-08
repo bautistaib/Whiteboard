@@ -76,7 +76,12 @@ export default function OverlayLayer({
         />
       )}
       {preview && preview.tool.startsWith("aoe-") && (
-        <AoEPreview preview={preview} cellSize={gridConfig.cellSize} color={drawColor} />
+        <AoEPreview
+          preview={preview}
+          cellSize={gridConfig.cellSize}
+          metersPerCell={gridConfig.metersPerCell}
+          color={drawColor}
+        />
       )}
 
       {/* rectángulo de multi-selección */}
@@ -137,10 +142,12 @@ export default function OverlayLayer({
 function AoEPreview({
   preview,
   cellSize,
+  metersPerCell,
   color,
 }: {
   preview: Preview;
   cellSize: number;
+  metersPerCell: number;
   color: string;
 }) {
   const dx = preview.current.x - preview.start.x;
@@ -179,7 +186,12 @@ function AoEPreview({
       )}
       <Label x={preview.current.x - preview.start.x + 8} y={preview.current.y - preview.start.y - 8}>
         <Tag fill="#000" opacity={0.8} cornerRadius={4} />
-        <Text text={`${cells} ${cells === 1 ? "celda" : "celdas"}`} fontSize={14} fill="#ffeb3b" padding={6} />
+        <Text
+          text={`${cells} ${cells === 1 ? "celda" : "celdas"} · ${(cells * metersPerCell).toFixed(1)} m`}
+          fontSize={14}
+          fill="#ffeb3b"
+          padding={6}
+        />
       </Label>
     </Group>
   );
