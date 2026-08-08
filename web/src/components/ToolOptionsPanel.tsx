@@ -29,6 +29,8 @@ const COLOR_SWATCHES = [
 
 const WIDTH_PRESETS = [2, 4, 8, 16];
 
+const ANGLE_PRESETS = [30, 45, 60, 90];
+
 /** Panel contextual de opciones: color + grosor (slider y presets). */
 export default function ToolOptionsPanel() {
   const tool = useStore((s) => s.tool);
@@ -38,6 +40,8 @@ export default function ToolOptionsPanel() {
   const setDrawColor = useStore((s) => s.setDrawColor);
   const drawWidth = useStore((s) => s.drawWidth);
   const setDrawWidth = useStore((s) => s.setDrawWidth);
+  const aoeAngle = useStore((s) => s.aoeAngle);
+  const setAoeAngle = useStore((s) => s.setAoeAngle);
 
   if (!TOOLS_WITH_OPTIONS.includes(tool)) return null;
   if (!open) return null;
@@ -91,6 +95,34 @@ export default function ToolOptionsPanel() {
           </button>
         ))}
       </div>
+      {tool === "aoe-cone" && (
+        <>
+          <label className="width-row">
+            Ángulo
+            <input
+              type="range"
+              min={15}
+              max={120}
+              step={5}
+              value={aoeAngle}
+              onChange={(e) => setAoeAngle(Number(e.target.value))}
+            />
+            <span className="muted small">{aoeAngle}°</span>
+          </label>
+          <div className="width-presets">
+            {ANGLE_PRESETS.map((a) => (
+              <button
+                key={a}
+                className={`width-preset ${aoeAngle === a ? "active" : ""}`}
+                title={`Ángulo ${a}°`}
+                onClick={() => setAoeAngle(a)}
+              >
+                <span className="muted small">{a}°</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

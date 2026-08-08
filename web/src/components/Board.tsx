@@ -377,6 +377,8 @@ export default function Board() {
         size_cells: cells,
         rotation: p.tool === "aoe-circle" ? 0 : angle,
         color: drawColor,
+        ...(p.tool === "aoe-cone" ? { angle: useStore.getState().aoeAngle } : {}),
+        ...(p.tool === "aoe-line" ? { width_px: drawWidth } : {}),
       };
       const id = optimisticAdd("aoe", data);
       wsClient.send("aoe.add", { id, data });
