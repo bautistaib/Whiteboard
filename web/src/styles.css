@@ -158,6 +158,36 @@ select {
 .conn.off {
   color: #ffa94d;
 }
+.self-name {
+  font-size: 13px;
+  color: #9aa3b2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.roster {
+  position: relative;
+}
+.roster-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #232833;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 51;
+}
+.roster-item {
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .board-main {
   display: flex;
   flex: 1;

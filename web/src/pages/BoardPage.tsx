@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Board from "../components/Board";
 import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
@@ -23,12 +23,17 @@ export default function BoardPage() {
   const tunnelUrl = useStore((s) => s.tunnelUrl);
   const tunnelBannerOpen = useStore((s) => s.tunnelBannerOpen);
   const setTunnelBannerOpen = useStore((s) => s.setTunnelBannerOpen);
+  const users = useStore((s) => s.users);
   const fatalReason = useStore((s) => s.fatalReason);
+  const [rosterOpen, setRosterOpen] = useState(false);
 
+  // name se omite de las deps a propósito: el rename viaja por
+  // presence.rename y la reconexión lee el nombre fresco del store
   useEffect(() => {
     wsClient.connect(token, name, clientId);
     return () => wsClient.disconnect();
-  }, [token, name, clientId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, clientId]);
 
   // atajos de teclado globales
   useEffect(() => {
@@ -80,7 +85,36 @@ export default function BoardPage() {
       <div className="topbar">
         <span className="campaign-name">{campaignName || "…"}</span>
         {role === "dm" && <span className="badge-dm">DM</span>}
+        <span className="self-name">
+          {name}
+          <button className="mini" title="Cambiar tu nombre" onClick={renameSelf}>
+            ✎
+          </button>
+        </span>
         <SceneTabs />
+        <div className="roster">
+          <button
+            className="mini"
+            title="Quiénes están conectados"
+            onClick={() => setRosterOpen((v) => !v)}
+          >
+            👥 {users.length}
+          </button>
+          {rosterOpen && (
+            <>
+              <div className="context-overlay" onClick={() => setRosterOpen(false)} />
+              <div className="roster-panel">
+                {users.map((u) => (
+                  <div key={u.clientId} className="roster-item">
+                    <span>{u.name}</span>
+                    {u.role === "dm" && <span className="badge-dm">DM</span>}
+                    {u.clientId === clientId && <span className="muted">(vos)</span>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {role === "dm" && tunnelUrl && !tunnelBannerOpen && (
           <button className="mini" title="Mostrar el link para compartir" onClick={() => setTunnelBannerOpen(true)}>
             🔗 Link
@@ -98,6 +132,16 @@ export default function BoardPage() {
       </div>
     </div>
   );
+}
+
+/** Cambia el nombre propio: localStorage + store + aviso a la sala. */
+export function renameSelf() {
+  const st = useStore.getState();
+  const next = window.prompt("Tu nombre", st.name)?.trim().slice(0, 32);
+  if (!next || next === st.name) return;
+  localStorage.setItem("ttrpg:name", next);
+  st.setSession({ name: next });
+  wsClient.send("presence.rename", { name: next });
 }
 
 export function prefixOf(objType: string): string {
