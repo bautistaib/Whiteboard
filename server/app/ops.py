@@ -27,7 +27,7 @@ OBJECT_TYPES: dict[str, str] = {
 }
 
 SCENE_OPS = {"switch", "create", "rename", "setGrid", "setBackground", "delete"}
-EPHEMERAL_OPS = {"cursor.move", "ping", "camera.sync"}
+EPHEMERAL_OPS = {"cursor.move", "ping", "camera.sync", "presence.rename"}
 META_OPS = {"undo", "redo"}
 
 

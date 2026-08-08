@@ -291,6 +291,10 @@ async def dispatch(
             },
         )
         return
+    if op_type == "presence.rename":
+        conn.name = str(payload.get("name", ""))[:32] or "Anónimo"
+        await broadcast(room, {"type": "presence", "users": presence_list(room)})
+        return
     if op_type == "camera.sync":
         if conn.role != "dm":
             return
