@@ -10,6 +10,7 @@ export const TOOLS: { id: Tool; label: string; icon: string; key: string }[] = [
   { id: "select", label: "Seleccionar / mover", icon: "⬚", key: "V" },
   { id: "pan", label: "Mover cámara", icon: "✋", key: "H" },
   { id: "pencil", label: "Lápiz", icon: "✏️", key: "P" },
+  { id: "marker", label: "Resaltador", icon: "🖊", key: "N" },
   { id: "rect", label: "Rectángulo", icon: "▭", key: "R" },
   { id: "circle", label: "Círculo", icon: "◯", key: "O" },
   { id: "line", label: "Línea", icon: "╱", key: "L" },

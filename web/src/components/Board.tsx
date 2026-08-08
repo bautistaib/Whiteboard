@@ -1,6 +1,7 @@
 import type Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Layer, Stage } from "react-konva";
+import { simplifyRdp } from "../draw/simplify";
 import { gridFromConfig } from "../grid";
 import { useStore, type SceneObj } from "../store";
 import { sendThrottled, wsClient } from "../ws";
@@ -35,6 +36,12 @@ export default function Board() {
   const followDm = useStore((s) => s.followDm);
   const drawColor = useStore((s) => s.drawColor);
   const drawWidth = useStore((s) => s.drawWidth);
+  const drawOpacity = useStore((s) => s.drawOpacity);
+  const drawLineStyle = useStore((s) => s.drawLineStyle);
+  const shapeFill = useStore((s) => s.shapeFill);
+  const markerColor = useStore((s) => s.markerColor);
+  const markerWidth = useStore((s) => s.markerWidth);
+  const markerOpacity = useStore((s) => s.markerOpacity);
   const setMeasure = useStore((s) => s.setMeasure);
   const setSelection = useStore((s) => s.setSelection);
   const setContextMenu = useStore((s) => s.setContextMenu);
@@ -160,7 +167,7 @@ export default function Board() {
       eraseStroke.current = [pos];
       return;
     }
-    if (tool === "pencil") {
+    if (tool === "pencil" || tool === "marker") {
       setPreview({ tool, start: pos, current: pos, points: [pos.x, pos.y] });
       return;
     }
@@ -217,8 +224,15 @@ export default function Board() {
       return;
     }
     if (preview) {
-      if (preview.tool === "pencil") {
-        setPreview({ ...preview, current: pos, points: [...(preview.points ?? []), pos.x, pos.y] });
+      if (preview.tool === "pencil" || preview.tool === "marker") {
+        const pts = preview.points ?? [];
+        // adelgazado en captura: densidad ~constante en px de pantalla
+        const minDist = Math.max(1.5, 2 / camera.scale);
+        const dx = pos.x - pts[pts.length - 2];
+        const dy = pos.y - pts[pts.length - 1];
+        if (dx * dx + dy * dy >= minDist * minDist) {
+          setPreview({ ...preview, current: pos, points: [...pts, pos.x, pos.y] });
+        }
       } else {
         setPreview({ ...preview, current: pos });
       }
@@ -257,7 +271,7 @@ export default function Board() {
     markEraseDragged();
 
     const st = useStore.getState();
-    const radius = Math.max(6, st.drawWidth) / st.camera.scale;
+    const radius = st.eraserWidth / st.camera.scale;
     const clientId = st.clientId;
     const isDm = st.role === "dm";
 
@@ -328,6 +342,9 @@ export default function Board() {
           rotation: rot,
           scaleX: sx,
           scaleY: sy,
+          // heredar estilo del trazo original
+          ...(obj.data.opacity != null ? { opacity: obj.data.opacity } : {}),
+          ...(obj.data.dash ? { dash: true } : {}),
         };
         const newId = optimisticAdd("path", data);
         wsClient.send("draw.add", { id: newId, data });
@@ -362,11 +379,30 @@ export default function Board() {
     const dy = p.current.y - p.start.y;
     const distPx = Math.hypot(dx, dy);
 
-    if (p.tool === "pencil") {
-      const pts = p.points ?? [];
-      if (pts.length >= 2) {
+    // estilo opcional de formas (se omite cuando es el default)
+    const style: Record<string, any> = {};
+    if (drawOpacity < 1) style.opacity = drawOpacity;
+    if (drawLineStyle === "dash") style.dash = true;
+
+    if (p.tool === "pencil" || p.tool === "marker") {
+      const raw = p.points ?? [];
+      if (raw.length >= 2) {
         // un click = 1 punto (2 valores) → puntito; un trazo = varios
-        const data = { x: 0, y: 0, points: pts, color: drawColor, width: drawWidth };
+        // simplificación RDP con epsilon relativo a pantalla; si dejara < 2
+        // puntos conservamos el trazo adelgazado sin simplificar
+        const simplified = simplifyRdp(raw, 0.75 / camera.scale);
+        const points = simplified.length < 4 && raw.length >= 4 ? raw : simplified;
+        const isMarker = p.tool === "marker";
+        const opacity = isMarker ? markerOpacity : drawOpacity;
+        const data: Record<string, any> = {
+          x: 0,
+          y: 0,
+          points,
+          color: isMarker ? markerColor : drawColor,
+          width: isMarker ? markerWidth : drawWidth,
+        };
+        if (opacity < 1) data.opacity = opacity;
+        if (!isMarker && drawLineStyle === "dash") data.dash = true; // el marcador nunca dashea
         const id = optimisticAdd("path", data);
         wsClient.send("draw.add", { id, data });
       }
@@ -405,6 +441,8 @@ export default function Board() {
               h: Math.abs(dy),
               color: drawColor,
               width: drawWidth,
+              ...style,
+              ...(shapeFill ? { filled: true } : {}),
             }
           : {
               shape: "circle",
@@ -414,6 +452,8 @@ export default function Board() {
               h: Math.abs(dy),
               color: drawColor,
               width: drawWidth,
+              ...style,
+              ...(shapeFill ? { filled: true } : {}),
             };
       const id = optimisticAdd("shape", data);
       wsClient.send("shape.add", { id, data });
@@ -427,6 +467,7 @@ export default function Board() {
         points: [0, 0, dx, dy],
         color: drawColor,
         width: drawWidth,
+        ...style,
       };
       const id = optimisticAdd("shape", data);
       wsClient.send("shape.add", { id, data });

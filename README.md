@@ -64,7 +64,7 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 - **Medición**: click y arrastrar muestra distancia en celdas y metros (configurable, default 1,5 m/celda; en hex usa distancia hexagonal real).
 - **Tokens con biblioteca**: subís la imagen una vez y queda para siempre. Personajes con **formas/variantes** (ej: druida y sus transformaciones): click derecho → *Cambiar forma* y el swap es instantáneo, conservando posición, dueño y badges.
 - **Fondos/mapas**: el DM sube el mapa, calibra la grilla encima y los tokens snapean correctamente.
-- **Dibujo**: lápiz, rectángulos, círculos, líneas, flechas y texto. Cualquier dibujo se puede **convertir en token** reutilizable.
+- **Dibujo**: lápiz, resaltador, rectángulos, círculos, líneas, flechas y texto. Opacidad, trazo punteado y relleno de formas. Cualquier dibujo se puede **convertir en token** reutilizable.
 - **Calidad de vida en combate**: duplicar tokens (Ctrl+D), multi-selección y movimiento en grupo, badges de estado (☠️🔥🧊…), plantillas de área (círculo/cono/línea medidas en celdas), *"seguir al DM"* (sincroniza tu cámara con la del DM), **ping** con click de la rueda (o mantener presionado en táctil), y **deshacer/rehacer por usuario** (Ctrl+Z / Ctrl+Shift+Z).
 
 ## Controles rápidos
@@ -78,7 +78,8 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 | Puntito / trazo | Con el lápiz: un click hace un puntito, arrastrar hace un trazo |
 | Borrar un objeto entero | Borrador (E) → click sobre el objeto |
 | Borrar parte de un trazo | Borrador → arrastrar sobre el trazo (como el borrador de Paint) |
-| Color y grosor | Elegí cualquier herramienta de dibujo y aparece el panel de opciones (⚙ para reabrirlo) |
+| Color, grosor, opacidad y más | Elegí cualquier herramienta de dibujo y aparece el panel de opciones con preview en vivo (⚙ para reabrirlo) |
+| Resaltador | Tecla N — trazo grueso semitransparente, con su propio color/grosor/opacidad |
 | Rotar/escalar el mapa | Panel de grilla (DM) → "Editar fondo" (desbloqueá, mové/rotá, volvé a bloquear para que no moleste) |
 | Multi-selección | Arrastrar un rectángulo o Shift+click |
 | Volver a la escena anterior | Alt + flecha izquierda |

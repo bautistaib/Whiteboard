@@ -1,6 +1,7 @@
 import type Konva from "konva";
 import { useRef } from "react";
 import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Text } from "react-konva";
+import { dashPattern, withAlpha } from "../draw/style";
 import { sortedObjects, useStore, type Role, type SceneObj } from "../store";
 import { sendThrottled, wsClient } from "../ws";
 import { prefixOf } from "../pages/BoardPage";
@@ -198,6 +199,7 @@ function DrawObject({
               y={pts[1]}
               radius={(d.width ?? 4) / 2}
               fill={d.color ?? "#fff"}
+              opacity={d.opacity ?? 1}
               hitRadius={Math.max(8, (d.width ?? 4) / 2 + 4)}
             />
           </Group>
@@ -212,6 +214,8 @@ function DrawObject({
           points={pts}
           stroke={d.color ?? "#fff"}
           strokeWidth={d.width ?? 4}
+          opacity={d.opacity ?? 1}
+          dash={d.dash ? dashPattern(d.width ?? 4) : undefined}
           lineCap="round"
           lineJoin="round"
           tension={0.4}
@@ -260,11 +264,17 @@ function DrawObject({
   // shape
   const stroke = d.color ?? "#fff";
   const width = d.width ?? 4;
+  // estilo opcional: opacidad, dash y relleno translúcido (rect/circle)
+  const shapeStyle = {
+    opacity: d.opacity ?? 1,
+    dash: d.dash ? dashPattern(width) : undefined,
+  };
+  const fill = d.filled ? withAlpha(stroke, 0.25 * (d.opacity ?? 1)) : undefined;
   switch (d.shape) {
     case "rect":
       return (
         <>
-          <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} stroke={stroke} strokeWidth={width} />
+          <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} stroke={stroke} strokeWidth={width} {...shapeStyle} fill={fill} />
           {selected && <SelectionHalo obj={obj} />}
         </>
       );
@@ -277,6 +287,8 @@ function DrawObject({
             radiusY={Math.abs(d.h ?? 0) / 2}
             stroke={stroke}
             strokeWidth={width}
+            {...shapeStyle}
+            fill={fill}
           />
           {selected && <SelectionHalo obj={obj} />}
         </>
@@ -290,6 +302,7 @@ function DrawObject({
             stroke={stroke}
             fill={stroke}
             strokeWidth={width}
+            {...shapeStyle}
             pointerLength={12}
             pointerWidth={10}
           />
@@ -299,7 +312,7 @@ function DrawObject({
     default: // line
       return (
         <>
-          <Line {...common} points={d.points ?? [0, 0, 0, 0]} stroke={stroke} strokeWidth={width} />
+          <Line {...common} points={d.points ?? [0, 0, 0, 0]} stroke={stroke} strokeWidth={width} {...shapeStyle} />
           {selected && <SelectionHalo obj={obj} />}
         </>
       );
@@ -335,6 +348,7 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
             y={pts[1]}
             radius={width / 2}
             fill={color}
+            opacity={d.opacity ?? 1}
             hitRadius={Math.max(8, width / 2 + 4)}
           />
         </Group>
@@ -346,6 +360,8 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
         points={pts}
         stroke={color}
         strokeWidth={width}
+        opacity={d.opacity ?? 1}
+        dash={d.dash ? dashPattern(width) : undefined}
         lineCap="round"
         lineJoin="round"
         tension={0.4}
@@ -358,12 +374,17 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
     return <Text {...common} text={d.text ?? ""} fontSize={d.fontSize ?? 22} fill={d.color ?? "#fff"} />;
   }
 
-  // shape
+  // shape (mismo estilo opcional que la rama principal)
   const stroke = d.color ?? "#fff";
   const width = d.width ?? 4;
+  const shapeStyle = {
+    opacity: d.opacity ?? 1,
+    dash: d.dash ? dashPattern(width) : undefined,
+  };
+  const fill = d.filled ? withAlpha(stroke, 0.25 * (d.opacity ?? 1)) : undefined;
   switch (d.shape) {
     case "rect":
-      return <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} stroke={stroke} strokeWidth={width} />;
+      return <Rect {...common} width={d.w ?? 0} height={d.h ?? 0} stroke={stroke} strokeWidth={width} {...shapeStyle} fill={fill} />;
     case "circle":
       return (
         <Ellipse
@@ -372,6 +393,8 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
           radiusY={Math.abs(d.h ?? 0) / 2}
           stroke={stroke}
           strokeWidth={width}
+          {...shapeStyle}
+          fill={fill}
         />
       );
     case "arrow":
@@ -382,12 +405,13 @@ function GroupPart({ part }: { part: { type: string; data: Record<string, any> }
           stroke={stroke}
           fill={stroke}
           strokeWidth={width}
+          {...shapeStyle}
           pointerLength={12}
           pointerWidth={10}
         />
       );
     default: // line
-      return <Line {...common} points={d.points ?? [0, 0, 0, 0]} stroke={stroke} strokeWidth={width} />;
+      return <Line {...common} points={d.points ?? [0, 0, 0, 0]} stroke={stroke} strokeWidth={width} {...shapeStyle} />;
   }
 }
 

@@ -29,7 +29,42 @@ function initialDrawWidth(): number {
   return Number.isFinite(n) && n >= 1 && n <= 40 ? n : 4;
 }
 
+function initialDrawOpacity(): number {
+  const n = Number(lsGet("ttrpg:drawOpacity"));
+  return Number.isFinite(n) && n >= 0.1 && n <= 1 ? n : 1;
+}
+
+function initialDrawLineStyle(): LineStyle {
+  return lsGet("ttrpg:drawLineStyle") === "dash" ? "dash" : "solid";
+}
+
+function initialShapeFill(): boolean {
+  return lsGet("ttrpg:shapeFill") === "1";
+}
+
+function initialEraserWidth(): number {
+  const n = Number(lsGet("ttrpg:eraserWidth"));
+  return Number.isFinite(n) && n >= 2 && n <= 64 ? n : 10;
+}
+
+function initialMarkerColor(): string {
+  const c = lsGet("ttrpg:markerColor");
+  return c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : "#ffeb3b";
+}
+
+function initialMarkerWidth(): number {
+  const n = Number(lsGet("ttrpg:markerWidth"));
+  return Number.isFinite(n) && n >= 4 && n <= 40 ? n : 14;
+}
+
+function initialMarkerOpacity(): number {
+  const n = Number(lsGet("ttrpg:markerOpacity"));
+  return Number.isFinite(n) && n >= 0.1 && n <= 1 ? n : 0.45;
+}
+
 export type Role = "dm" | "player";
+
+export type LineStyle = "solid" | "dash";
 
 export interface SceneObj {
   id: string;
@@ -88,6 +123,7 @@ export type Tool =
   | "select"
   | "pan"
   | "pencil"
+  | "marker"
   | "rect"
   | "circle"
   | "line"
@@ -149,6 +185,14 @@ interface BoardState {
   tool: Tool;
   drawColor: string;
   drawWidth: number;
+  drawOpacity: number;
+  drawLineStyle: LineStyle;
+  /** relleno de formas cerradas (rect/circle) */
+  shapeFill: boolean;
+  eraserWidth: number;
+  markerColor: string;
+  markerWidth: number;
+  markerOpacity: number;
   /** apertura del cono AoE (grados) */
   aoeAngle: number;
   selection: string[];
@@ -181,6 +225,13 @@ interface BoardState {
   setTool: (t: Tool) => void;
   setDrawColor: (c: string) => void;
   setDrawWidth: (w: number) => void;
+  setDrawOpacity: (o: number) => void;
+  setDrawLineStyle: (s: LineStyle) => void;
+  setShapeFill: (v: boolean) => void;
+  setEraserWidth: (w: number) => void;
+  setMarkerColor: (c: string) => void;
+  setMarkerWidth: (w: number) => void;
+  setMarkerOpacity: (o: number) => void;
   setAoeAngle: (a: number) => void;
   setSelection: (ids: string[]) => void;
   toggleSelected: (id: string) => void;
@@ -224,6 +275,13 @@ export const useStore = create<BoardState>((set, get) => ({
   tool: "select",
   drawColor: initialDrawColor(),
   drawWidth: initialDrawWidth(),
+  drawOpacity: initialDrawOpacity(),
+  drawLineStyle: initialDrawLineStyle(),
+  shapeFill: initialShapeFill(),
+  eraserWidth: initialEraserWidth(),
+  markerColor: initialMarkerColor(),
+  markerWidth: initialMarkerWidth(),
+  markerOpacity: initialMarkerOpacity(),
   aoeAngle: 60,
   selection: [],
   contextMenu: null,
@@ -349,6 +407,34 @@ export const useStore = create<BoardState>((set, get) => ({
   setDrawWidth: (w) => {
     lsSet("ttrpg:drawWidth", String(w));
     set({ drawWidth: w });
+  },
+  setDrawOpacity: (o) => {
+    lsSet("ttrpg:drawOpacity", String(o));
+    set({ drawOpacity: o });
+  },
+  setDrawLineStyle: (s) => {
+    lsSet("ttrpg:drawLineStyle", s);
+    set({ drawLineStyle: s });
+  },
+  setShapeFill: (v) => {
+    lsSet("ttrpg:shapeFill", v ? "1" : "0");
+    set({ shapeFill: v });
+  },
+  setEraserWidth: (w) => {
+    lsSet("ttrpg:eraserWidth", String(w));
+    set({ eraserWidth: w });
+  },
+  setMarkerColor: (c) => {
+    lsSet("ttrpg:markerColor", c);
+    set({ markerColor: c });
+  },
+  setMarkerWidth: (w) => {
+    lsSet("ttrpg:markerWidth", String(w));
+    set({ markerWidth: w });
+  },
+  setMarkerOpacity: (o) => {
+    lsSet("ttrpg:markerOpacity", String(o));
+    set({ markerOpacity: o });
   },
   setAoeAngle: (a) => set({ aoeAngle: a }),
 
