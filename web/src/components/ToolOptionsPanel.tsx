@@ -1,7 +1,7 @@
 import { useStore, type Tool } from "../store";
 
 /** Herramientas que tienen opciones de color/grosor. */
-const TOOLS_WITH_OPTIONS: Tool[] = [
+export const TOOLS_WITH_OPTIONS: Tool[] = [
   "pencil",
   "rect",
   "circle",

@@ -2,24 +2,16 @@ import { useEffect } from "react";
 import Board from "../components/Board";
 import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
-import Toolbar from "../components/Toolbar";
+import Toolbar, { TOOLS } from "../components/Toolbar";
 import TunnelBanner from "../components/TunnelBanner";
 import { gridFromConfig } from "../grid";
 import { useStore, type Tool } from "../store";
 import { wsClient } from "../ws";
 
-const TOOL_KEYS: Record<string, Tool> = {
-  v: "select",
-  h: "pan",
-  p: "pencil",
-  r: "rect",
-  o: "circle",
-  l: "line",
-  a: "arrow",
-  t: "text",
-  e: "eraser",
-  m: "measure",
-};
+// derivado de TOOLS (Toolbar.tsx) para no duplicar las teclas
+const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(
+  TOOLS.map((t) => [t.key.toLowerCase(), t.id]),
+);
 
 export default function BoardPage() {
   const token = useStore((s) => s.token);
