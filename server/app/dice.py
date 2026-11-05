@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from colorsys import hls_to_rgb
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,15 @@ MAX_DICE = 100
 MAX_SIDES = 1000
 MAX_TERMS = 20
 MAX_MODIFIER = 100_000
+PLAYER_COLORS = ("#8dc5ff", "#e4b2ff", "#ffd38c", "#89e5cb", "#ffabc3", "#8ce7f4", "#ffad82", "#c4e985")
+
+
+def player_color(index: int) -> str:
+    if index < len(PLAYER_COLORS):
+        return PLAYER_COLORS[index]
+    # Continuar la paleta sin reciclar los primeros colores al entrar más gente.
+    rgb = hls_to_rgb(((index - len(PLAYER_COLORS)) * 0.61803398875) % 1, 0.74, 0.8)
+    return "#" + "".join(f"{round(channel * 255):02x}" for channel in rgb)
 
 _TERM = re.compile(
     r"(?P<sign>[+-]?)(?:"

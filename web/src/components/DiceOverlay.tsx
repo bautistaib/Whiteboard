@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { diceColor } from "../dice";
 import { ANIMATION_DURATION_MS, ROLL_DURATION_MS, visualDice, type DiceAnimation } from "../dice3d/animation";
 import type { DiceScene } from "../dice3d/scene";
 import { useStore } from "../store";
@@ -6,10 +7,17 @@ import { useStore } from "../store";
 const loadScene = () => import("../dice3d/scene");
 
 export default function DiceOverlay() {
-  const animation = useStore((s) => s.diceAnimations[0]);
+  const animations = useStore((s) => s.diceAnimations);
   // Descargar el chunk 3D en segundo plano antes de la primera tirada.
   useEffect(() => { void loadScene().catch(() => {}); }, []);
-  return animation ? <AnimatedRoll key={animation.roll.id} animation={animation} /> : null;
+  if (!animations.length) return null;
+  return (
+    <div className="dice-overlay" aria-label="Tiradas de la mesa" data-count={animations.length}>
+      <div className={`dice-trays ${animations.length === 1 ? "single" : animations.length === 2 ? "pair" : animations.length > 4 ? "many" : ""}`}>
+        {animations.map((animation) => <AnimatedRoll key={animation.roll.id} animation={animation} />)}
+      </div>
+    </div>
+  );
 }
 
 function AnimatedRoll({ animation }: { animation: DiceAnimation }) {
@@ -57,11 +65,11 @@ function AnimatedRoll({ animation }: { animation: DiceAnimation }) {
   }, [roll, startsAt]);
 
   const dice = visualDice(roll);
+  const colorStyle: CSSProperties & { "--dice-color": string } = { "--dice-color": diceColor(roll) };
   return (
-    <div className={`dice-overlay ${phase === "settled" ? "settled" : ""}`} data-roll-id={roll.id} data-phase={phase}>
-      <div className="dice-tray">
+      <section className="dice-tray" style={colorStyle} aria-label={`Tirada de ${roll.author}`} data-roll-id={roll.id} data-client-id={roll.clientId} data-phase={phase}>
         <div className="dice-tray-heading">
-          <span className="dice-tray-icon" aria-hidden="true">✦</span>
+          <span className="dice-tray-icon" aria-hidden="true">●</span>
           <div><strong>{roll.author}</strong><span>{roll.label || roll.expression}</span></div>
           <span className="dice-tray-state">{phase === "settled" ? "Resultado" : "Rodando dados…"}</span>
         </div>
@@ -73,7 +81,6 @@ function AnimatedRoll({ animation }: { animation: DiceAnimation }) {
             <span className="dice-tray-detail">{roll.terms.filter((t) => t.kind === "dice").map((term) => term.kind === "dice" ? `${term.notation}: ${term.rolls.map((n, i) => term.kept[i] ? n : `(${n})`).join(", ")}` : "").join(" · ")}</span>
           </> : <span>{dice.length} {dice.length === 1 ? "dado en la mesa" : "dados en la mesa"}</span>}
         </div>
-      </div>
-    </div>
+      </section>
   );
 }

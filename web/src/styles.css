@@ -790,12 +790,15 @@ button.full {
   padding: 16px;
 }
 .dice-tray {
-  width: min(760px, 100%);
-  height: min(430px, 100%);
+  --dice-color: #8dc5ff;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(149, 181, 233, 0.35);
+  border: 1px solid var(--dice-color);
+  border-top-width: 3px;
   border-radius: 22px;
   background: radial-gradient(ellipse at 50% 45%, rgba(38, 66, 91, 0.97), rgba(12, 23, 40, 0.97));
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45), inset 0 0 70px rgba(0, 0, 0, 0.25);
@@ -809,15 +812,17 @@ button.full {
   gap: 12px;
   padding: 16px 22px;
   border-bottom: 1px solid rgba(149, 181, 233, 0.12);
+  flex-shrink: 0;
 }
-.dice-tray-icon { font-size: 24px; color: #a6cbff; }
-.dice-tray-heading > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dice-tray-heading strong { font-size: 15px; overflow-wrap: anywhere; }
-.dice-tray-heading > div > span { color: #aebed5; font-size: 12px; overflow-wrap: anywhere; }
+.dice-tray-icon { font-size: 16px; color: var(--dice-color); }
+.dice-tray-heading > div { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.dice-tray-heading strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dice-tray-heading > div > span { color: #aebed5; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dice-tray-state { color: #bad6ff; font-size: 12px; margin-left: auto; white-space: nowrap; }
 .dice-stage { flex: 1; min-height: 0; position: relative; }
 .dice-stage canvas { display: block; width: 100%; height: 100%; }
 .dice-tray-result {
+  flex-shrink: 0;
   padding: 10px 22px 16px;
   min-height: 76px;
   display: flex;
@@ -831,6 +836,29 @@ button.full {
 .dice-tray-result > strong { font-size: 38px; line-height: 1; color: #fff; }
 .dice-tray-detail { width: 100%; text-align: center; font-size: 12px; max-height: 36px; overflow: hidden; overflow-wrap: anywhere; }
 .dice-3d-fallback { padding: 8px 16px; color: #b8cce5; font-size: 13px; text-align: center; }
+.dice-owner-color { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.dice-trays {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  width: min(1040px, 100%);
+  height: min(620px, 100%);
+  min-height: 0;
+}
+.dice-trays.single { grid-template-columns: minmax(0, 1fr); width: min(760px, 100%); height: min(430px, 100%); }
+.dice-trays.pair { height: min(430px, 100%); }
+.dice-trays.many { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dice-trays:not(.single) .dice-tray { border-radius: 16px; }
+.dice-trays:not(.single) .dice-tray-heading { padding: 10px 12px; gap: 8px; }
+.dice-trays:not(.single) .dice-tray-state { font-size: 10px; }
+.dice-trays:not(.single) .dice-tray-result { padding: 6px 12px 10px; min-height: 58px; font-size: 12px; gap: 4px 10px; }
+.dice-trays:not(.single) .dice-tray-result > strong { font-size: 28px; }
+.dice-trays:not(.single) .dice-tray-detail { font-size: 10px; max-height: 26px; }
+@media (max-width: 760px) {
+  .dice-trays.many { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dice-trays { gap: 8px; }
+}
 @keyframes dice-tray-enter {
   from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -842,4 +870,5 @@ button.full {
   .dice-overlay { padding: 8px; }
   .dice-tray-heading { padding: 12px; gap: 8px; }
   .dice-tray-state { font-size: 10px; }
+  .dice-trays:not(.single) .dice-tray-state { display: none; }
 }

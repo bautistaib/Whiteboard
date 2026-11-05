@@ -3,11 +3,10 @@ import {
   LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial,
   OrthographicCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector3, WebGLRenderer,
 } from "three";
-import type { DiceRoll } from "../dice";
+import { diceColor, type DiceRoll } from "../dice";
 import { planMotion, sampleMotion, visualDice, type VisualDie } from "./animation";
 import { buildDieShape, restingQuaternion, type DieShape } from "./geometry";
 
-const COLORS = ["#8dc5ff", "#e4b2ff", "#ffd38c", "#89e5cb", "#ffabc3"];
 const CELL_SIZE = 128;
 
 function faceLabels(die: VisualDie, shape: DieShape): string[] {
@@ -108,7 +107,7 @@ export function createDiceScene(host: HTMLElement, roll: DiceRoll, onContextLost
       texture = numberTexture(die, shape);
       textures.set(textureKey, texture);
     }
-    const color = new Color(COLORS[die.termIndex % COLORS.length]);
+    const color = new Color(diceColor(roll));
     const material = new MeshStandardMaterial({ map: texture, color, roughness: 0.32, metalness: 0.16 });
     const group = new Group();
     group.add(new Mesh(shape.geometry, material));

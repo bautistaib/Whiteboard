@@ -106,7 +106,7 @@ def test_roll_broadcasts_identical_server_result_to_everyone(client, tokens, mon
         receive(dm, "presence")
         with client.websocket_connect(f"/ws/{tokens['player']}?name=Ana&clientId=p1") as player:
             receive(player, "presence")
-            result = roll(player, label="Ataque", author="Falso", total=999, rolls=[20])
+            result = roll(player, label="Ataque", author="Falso", total=999, rolls=[20], color="#123456")
             assert receive(dm, "dice.result")["roll"] == result
             assert result["author"] == "Ana"
             assert result["clientId"] == "p1"
@@ -114,6 +114,7 @@ def test_roll_broadcasts_identical_server_result_to_everyone(client, tokens, mon
             assert result["total"] == 22
             assert result["terms"][0]["rolls"] == [17]
             assert result["createdAt"] > 0
+            assert result["color"] == dice.PLAYER_COLORS[0]
 
 
 def test_reconnect_and_scene_switch_retain_history(client, tokens):
@@ -214,3 +215,30 @@ def test_simultaneous_players_receive_rolls_in_identical_order(client, tokens):
             player_rolls = [receive(player, "dice.result")["roll"] for _ in range(2)]
             assert dm_rolls == player_rolls
             assert {r["opId"] for r in dm_rolls} == {"dm-roll", "player-roll"}
+            assert len({r["color"] for r in dm_rolls}) == 2
+
+
+def test_player_color_survives_rename_reconnect_and_is_not_shared_by_names(client, tokens):
+    url = f"/ws/{tokens['player']}?name=Ana&clientId=p1"
+    with client.websocket_connect(url) as player:
+        receive(player, "presence")
+        first = roll(player)
+        player.send_json({"type": "presence.rename", "payload": {"name": "Berta"}})
+        receive(player, "presence")
+        renamed = roll(player, op_id="renamed")
+        assert renamed["author"] == "Berta"
+        assert renamed["color"] == first["color"]
+    with client.websocket_connect(url) as player:
+        receive(player, "presence")
+        assert roll(player, op_id="reconnected")["color"] == first["color"]
+        with client.websocket_connect(f"/ws/{tokens['player']}?name=Ana&clientId=p2") as other:
+            receive(other, "presence")
+            assert roll(other)["color"] != first["color"]
+
+
+def test_many_participants_have_distinct_colors():
+    room = ws.Room()
+    colors = [room.dice_color(f"p{i}") for i in range(32)]
+    assert len(set(colors)) == len(colors)
+    assert all(len(color) == 7 and color.startswith("#") for color in colors)
+    assert [room.dice_color(f"p{i}") for i in range(32)] == colors

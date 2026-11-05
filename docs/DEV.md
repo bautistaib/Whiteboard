@@ -32,7 +32,7 @@ Whiteboard/
       grid.py                 GridSystem: SquareGrid + HexGrid (axial, flat/pointy)
       uploads.py              validación + recompresión WebP (mapas ≤4096, tokens ≤512, 10 MB)
       tunnel.py               subproceso cloudflared, parseo de URL, reintento automático
-    tests/                    pytest (156 tests)
+    tests/                    pytest (158 tests)
   web/
     src/
       store.ts                zustand: snapshot de escena, presence, cámara, selección, tools
@@ -100,13 +100,13 @@ Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync
 
 - El cliente manda `{type: "dice.roll", opId, payload: {expression, label?}}`. Solo con conexión y snapshot listos: las tiradas nunca se encolan para ejecutarse al reconectar.
 - `dice.py` parsea la fórmula completa antes de tirar, sin `eval`. Admite sumas/restas de `NdM`, constantes y sufijos `khN`/`klN` (conservar mayores/menores). Usa `secrets.randbelow(M) + 1` para cada dado. Límites: 200 caracteres, 20 términos, 100 dados totales, 2–1000 caras, modificador ≤100000 por término y al menos un dado.
-- El servidor fija identidad, timestamp e ID; ignora cualquier resultado o autor enviado por el cliente. Broadcast `{type: "dice.result", roll: {id, opId, clientId, author, label, createdAt, expression, total, terms}}` a toda la sala, incluido el emisor. `terms` distingue `dice` (caras, valores, máscara `kept`, subtotal firmado) de `constant` (valor y subtotal firmado). Timestamp Unix en segundos.
+- El servidor fija identidad, color, timestamp e ID; ignora cualquier resultado, autor o color enviado por el cliente. Broadcast `{type: "dice.result", roll: {id, opId, clientId, author, color, label, createdAt, expression, total, terms}}` a toda la sala, incluido el emisor. `terms` distingue `dice` (caras, valores, máscara `kept`, subtotal firmado) de `constant` (valor y subtotal firmado). Timestamp Unix en segundos. `Room.dice_colors` asigna colores distintos por `clientId` en esa campaña y los mantiene hasta reiniciar/borrar la sala, incluidos renombres y reconexiones; el color también viaja en el historial del snapshot. En clientes nuevos, resultados anteriores sin `color` usan un color por defecto.
 - Errores: `{type: "dice.error", opId, reason}` solo al emisor. El panel los muestra y permite corregir sin desconectar.
 - `Room.dice_rolls` es un deque de 50 entradas; se incluye como `diceRolls` en cada snapshot. Sobrevive a desconexiones y cambios de escena; se descarta al reiniciar o borrar la campaña. No toca SQLite ni pilas de undo/redo. Un pedido repetido con el mismo `(clientId, opId)` se responde con el resultado original mientras siga en el historial, sin tirar ni volver a emitir a toda la sala.
 - `DicePanel.tsx`: dados rápidos, fórmula, etiqueta, ventaja/desventaja, resultado reciente e historial con desglose. El botón superior cuenta nuevas tiradas mientras el panel está cerrado. El store deduplica resultados por ID.
 - `DiceOverlay.tsx` se monta para toda la mesa, independientemente del panel. Carga Three.js en un chunk separado, precargado en segundo plano al entrar. No depende de servicios ni assets externos. La escena libera texturas, geometrías, observadores, RAF y contexto WebGL al salir. Sin WebGL muestra el resultado textual; con `prefers-reduced-motion` representa los dados ya quietos.
-- Sincronización visual: snapshots incluyen `serverTime` (segundos Unix); heartbeat envía `sentAt` (ms del cliente) y recibe su eco + `serverTime`. El cliente estima el offset usando el punto medio del viaje de ida/vuelta. La animación empieza en `createdAt * 1000 + 350`, rueda 2200 ms y conserva las caras finales otros 1800 ms. Muestrear por tiempo absoluto evita depender de los FPS. Las trayectorias usan el ID del servidor como semilla, sin generar valores de dados. `Room.dice_lock` serializa tiradas y broadcasts para que dos jugadores simultáneos no alteren el orden entre clientes.
-- `diceAnimations` solo recibe resultados nuevos vía WS, nunca snapshots ni duplicados. La cola programa cada tirada después de la anterior, con un límite de 8; una ráfaga conserva la activa y las últimas, compactando sus horarios. Desconectar vacía la animación, sin reintentar ni reproducir el historial al reconectar.
+- Sincronización visual: snapshots incluyen `serverTime` (segundos Unix); heartbeat envía `sentAt` (ms del cliente) y recibe su eco + `serverTime`. El cliente estima el offset usando el punto medio del viaje de ida/vuelta. Cada animación empieza en `createdAt * 1000 + 350`, rueda 2200 ms y conserva las caras finales otros 1800 ms, sin depender de otras tiradas. Muestrear por tiempo absoluto evita depender de los FPS. Las trayectorias usan el ID del servidor como semilla, sin generar valores de dados. `Room.dice_lock` serializa cálculo y broadcasts, sin esperar a que se muestren las animaciones.
+- `diceAnimations` solo recibe resultados nuevos vía WS, nunca snapshots ni duplicados. `addDiceAnimation` mantiene hasta 8 animaciones concurrentes con horarios independientes; una ráfaga conserva las 8 más recientes sin acumular esperas. `DiceOverlay` muestra todas en una grilla adaptable, con una escena por tirada. Keys por ID mantienen cada escena activa al llegar o vencer otras; cada una usa su propio RAF y se libera al terminar. El borde, los dados y el indicador del historial comparten el color del participante. Desconectar vacía las animaciones, sin reintentar ni reproducir el historial al reconectar.
 - Geometrías planas numeradas con atlas de texturas, compartidos por tipo de dado. d10 = trapezoedro pentagonal; d100 usa dos d10 con 00–90 y 0–9 (00 + 0 = 100). Dados no estándar usan una ficha rotulada con sus caras y valor. El quaternion final orienta la cara recibida hacia arriba y mantiene el número legible; los dados descartados cambian a gris al detenerse. La animación es una coreografía visual del resultado autoritativo, no un segundo cálculo de la tirada.
 
 ### Permisos
@@ -199,12 +199,12 @@ Para probar el server sirviendo el bundle (modo producción): `npm run build` en
 
 ```powershell
 cd server
-.\.venv\Scripts\pytest            # 156 tests
+.\.venv\Scripts\pytest            # 158 tests
 npx pyright                       # type checking (config canónica en pyrightconfig.json)
 
 cd web
 npm run build                     # tsc --noEmit + vite build
-npm test                          # 14 pruebas de animación, sincronización, store y geometrías 3D
+npm test                          # 16 pruebas de animación, sincronización, store y geometrías 3D
 ```
 
 Cobertura de tests actual:
@@ -218,8 +218,8 @@ Cobertura de tests actual:
 | Escenas | `test_ws_scenes.py` | create/rename/delete/setGrid/setBackground, switch con snapshot fresco a todos, **ops post-switch aplican sobre la escena nueva** (regresión: escena stale), switch a escena inexistente (error limpio), objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
 | Biblioteca | `test_library.py` | personaje+variante automáticos, variante en personaje existente, permisos de borrado, cascada (variantes + personaje vacío), borrado de archivo, path traversal, `/api/tunnel` solo DM |
 | Túnel/flush | `test_tunnel.py` | regex de URL sobre salida real de cloudflared, falsos positivos, flush solo-dirty, add+delete en la misma ventana |
-| Dados | `test_dice.py` | parser, modificadores, conservar mayores/menores y empates, límites y fórmulas inválidas antes de generar azar; broadcast idéntico y orden compartido entre jugadores simultáneos, reloj del servidor, identidad autoritativa, reconexión/cambio de escena, historial acotado, deduplicación, aislamiento por campaña, errores recuperables y ausencia de efectos en persistencia/undo/redo |
-| Dados 3D (frontend) | `web/src/dice3d/*.test.ts` | descomposición de d100, descartados y dados especiales, trayectorias reproducibles, reposo sin saltos, orden y límite de cola, snapshots sin replay, deduplicación del store, caras y aristas de cada poliedro, planitud, UVs y orientación final de todas las caras |
+| Dados | `test_dice.py` | parser, modificadores, conservar mayores/menores y empates, límites y fórmulas inválidas antes de generar azar; broadcast idéntico y orden compartido entre jugadores simultáneos, colores autoritativos distintos y estables por participante, reloj del servidor, identidad autoritativa, reconexión/cambio de escena, historial acotado, deduplicación, aislamiento por campaña, errores recuperables y ausencia de efectos en persistencia/undo/redo |
+| Dados 3D (frontend) | `web/src/dice3d/*.test.ts` | descomposición de d100, descartados y dados especiales, trayectorias reproducibles, reposo sin saltos, animaciones simultáneas sin retrasos/reinicios y con vencimiento independiente, límite de vistas, snapshots sin replay, deduplicación del store, caras y aristas de cada poliedro, planitud, UVs y orientación final de todas las caras |
 
 Sin tests automatizados (verificación manual con dos navegadores): latencia percibida (<200 ms), animaciones de ping, drag multi-touch, follow-DM end-to-end.
 

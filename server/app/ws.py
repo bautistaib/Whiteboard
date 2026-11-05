@@ -37,10 +37,21 @@ class Room:
         self.seq = 0
         self.dice_rolls: deque[dict[str, Any]] = deque(maxlen=dice.HISTORY_LIMIT)
         self.dice_lock = asyncio.Lock()
+        self.dice_colors: dict[str, str] = {}
 
     def next_seq(self) -> int:
         self.seq += 1
         return self.seq
+
+    def dice_color(self, client_id: str) -> str:
+        if client_id not in self.dice_colors:
+            index = len(self.dice_colors)
+            color = dice.player_color(index)
+            while color in self.dice_colors.values():
+                index += 1
+                color = dice.player_color(index)
+            self.dice_colors[client_id] = color
+        return self.dice_colors[client_id]
 
 
 rooms: dict[str, Room] = {}
@@ -419,6 +430,7 @@ async def _handle_dice_roll(
         "opId": op_id,
         "clientId": conn.client_id,
         "author": conn.name,
+        "color": room.dice_color(conn.client_id),
         "label": label.strip(),
         "createdAt": time.time(),
     }

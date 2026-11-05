@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { DiceRoll } from "../dice";
+import { diceColor, type DiceRoll } from "../dice";
 import { useStore } from "../store";
 import { wsClient } from "../ws";
 
@@ -107,6 +107,7 @@ function RollEntry({ roll, onRepeat, disabled }: { roll: DiceRoll; onRepeat: () 
   return (
     <li className="dice-entry">
       <div className="dice-entry-head">
+        <span className="dice-owner-color" style={{ backgroundColor: diceColor(roll) }} aria-hidden="true" />
         <strong>{roll.author}</strong>
         <time dateTime={new Date(roll.createdAt * 1000).toISOString()}>
           {new Date(roll.createdAt * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}

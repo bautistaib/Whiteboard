@@ -4,7 +4,7 @@ export const ROLL_DELAY_MS = 350;
 export const ROLL_DURATION_MS = 2200;
 export const ROLL_HOLD_MS = 1800;
 export const ANIMATION_DURATION_MS = ROLL_DURATION_MS + ROLL_HOLD_MS;
-export const ANIMATION_QUEUE_LIMIT = 8;
+export const ANIMATION_LIMIT = 8;
 
 export interface DiceAnimation {
   roll: DiceRoll;
@@ -46,23 +46,15 @@ export function seededRandom(seed: string): () => number {
   };
 }
 
-export function queueDiceAnimation(queue: DiceAnimation[], roll: DiceRoll, now: number): DiceAnimation[] {
+export function addDiceAnimation(animations: DiceAnimation[], roll: DiceRoll, now: number): DiceAnimation[] {
   // Los snapshots no pasan por acá. Un duplicado tampoco vuelve a animarse.
-  if (queue.some((entry) => entry.roll.id === roll.id)) return queue;
-  const live = queue.filter((entry) => entry.startsAt + ANIMATION_DURATION_MS > now);
-  const last = live[live.length - 1];
-  const startsAt = Math.max(roll.createdAt * 1000 + ROLL_DELAY_MS, last ? last.startsAt + ANIMATION_DURATION_MS : 0);
+  const live = animations.filter((entry) => entry.startsAt + ANIMATION_DURATION_MS > now);
+  if (live.some((entry) => entry.roll.id === roll.id)) return live;
+  const startsAt = roll.createdAt * 1000 + ROLL_DELAY_MS;
   if (startsAt + ANIMATION_DURATION_MS <= now) return live;
-  // Si hay una ráfaga, conservar la animación activa y las más recientes.
-  // Todo resultado, incluso los omitidos de la animación, sigue en el historial.
-  if (live.length >= ANIMATION_QUEUE_LIMIT) {
-    const kept = [live[0], ...live.slice(-(ANIMATION_QUEUE_LIMIT - 2)), { roll, startsAt }];
-    return kept.map((entry, i) => ({
-      ...entry,
-      startsAt: Math.max(entry.roll.createdAt * 1000 + ROLL_DELAY_MS, live[0].startsAt + i * ANIMATION_DURATION_MS),
-    }));
-  }
-  return [...live, { roll, startsAt }];
+  // Cada tirada conserva su reloj: ninguna espera a que terminen las demás.
+  // Una ráfaga mantiene las últimas 8 vistas; todo resultado queda en el historial.
+  return [...live, { roll, startsAt }].slice(-ANIMATION_LIMIT);
 }
 
 export interface DieMotion {

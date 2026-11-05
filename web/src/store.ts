@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { defaultGridConfig, normalizeGridConfig } from "./grid";
 import type { GridConfig } from "./grid";
 import { DICE_HISTORY_LIMIT, type DiceRoll } from "./dice";
-import { queueDiceAnimation, type DiceAnimation } from "./dice3d/animation";
+import { addDiceAnimation, type DiceAnimation } from "./dice3d/animation";
 
 /** Lectura/escritura segura de localStorage (nunca rompe si no está disponible). */
 export function lsGet(key: string): string | null {
@@ -481,7 +481,7 @@ export const useStore = create<BoardState>((set, get) => ({
     const ownResponse = roll.clientId === st.clientId && roll.opId === st.dicePendingId;
     return {
       diceRolls: duplicate ? st.diceRolls : [...st.diceRolls, roll].slice(-DICE_HISTORY_LIMIT),
-      diceAnimations: duplicate ? st.diceAnimations : queueDiceAnimation(st.diceAnimations, roll, Date.now() + st.serverClockOffsetMs),
+      diceAnimations: duplicate ? st.diceAnimations : addDiceAnimation(st.diceAnimations, roll, Date.now() + st.serverClockOffsetMs),
       diceUnread: duplicate || st.diceOpen ? st.diceUnread : Math.min(st.diceUnread + 1, DICE_HISTORY_LIMIT),
       dicePendingId: ownResponse ? null : st.dicePendingId,
       diceError: ownResponse ? null : st.diceError,
