@@ -188,3 +188,29 @@ def test_rolls_do_not_persist_or_change_undo_redo(client, tokens):
     ws.rooms.clear()
     with client.websocket_connect(f"/ws/{tokens['player']}?clientId=p1") as player:
         assert receive(player, "scene.snapshot")["diceRolls"] == []
+
+
+def test_clock_sync_provides_server_time_and_echoes_client_timestamp(client, tokens):
+    with client.websocket_connect(f"/ws/{tokens['player']}?clientId=p1") as player:
+        snapshot = receive(player, "scene.snapshot")
+        assert snapshot["serverTime"] > 0
+        receive(player, "presence")
+        player.send_json({"type": "heartbeat", "sentAt": 1234567890000})
+        sync = receive(player, "heartbeat")
+        assert sync["sentAt"] == 1234567890000
+        assert sync["serverTime"] >= snapshot["serverTime"]
+        player.send_json({"type": "heartbeat"})
+        assert receive(player, "heartbeat")["serverTime"] >= sync["serverTime"]
+
+
+def test_simultaneous_players_receive_rolls_in_identical_order(client, tokens):
+    with client.websocket_connect(f"/ws/{tokens['dm']}?name=DM&clientId=dm") as dm:
+        receive(dm, "presence")
+        with client.websocket_connect(f"/ws/{tokens['player']}?name=Ana&clientId=p1") as player:
+            receive(player, "presence")
+            dm.send_json({"type": "dice.roll", "opId": "dm-roll", "payload": {"expression": "d6"}})
+            player.send_json({"type": "dice.roll", "opId": "player-roll", "payload": {"expression": "d20"}})
+            dm_rolls = [receive(dm, "dice.result")["roll"] for _ in range(2)]
+            player_rolls = [receive(player, "dice.result")["roll"] for _ in range(2)]
+            assert dm_rolls == player_rolls
+            assert {r["opId"] for r in dm_rolls} == {"dm-roll", "player-roll"}

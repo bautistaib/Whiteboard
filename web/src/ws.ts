@@ -17,7 +17,7 @@ class WSClient {
   connect(token: string, name: string, clientId: string) {
     this.token = token;
     this.closedByUser = false;
-    useStore.setState({ fatalReason: null, diceRolls: [], diceUnread: 0, dicePendingId: null, diceError: null });
+    useStore.setState({ fatalReason: null, diceRolls: [], diceUnread: 0, dicePendingId: null, diceError: null, diceAnimations: [], serverClockOffsetMs: 0 });
     this.open(name, clientId);
   }
 
@@ -37,9 +37,10 @@ class WSClient {
 
     ws.onopen = () => {
       this.reconnectDelay = 500;
+      ws.send(JSON.stringify({ type: "heartbeat", sentAt: Date.now() }));
       this.heartbeatTimer = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "heartbeat" }));
+          ws.send(JSON.stringify({ type: "heartbeat", sentAt: Date.now() }));
         }
       }, 25000);
     };
@@ -54,6 +55,9 @@ class WSClient {
       const st = useStore.getState();
 
       if (msg.type === "scene.snapshot") {
+        if (!st.snapshotReceived && typeof msg.serverTime === "number") {
+          useStore.setState({ serverClockOffsetMs: msg.serverTime * 1000 - Date.now() });
+        }
         st.applySnapshot(msg);
         // flush de ops encoladas pre-snapshot
         const queued = this.queue;
@@ -106,6 +110,10 @@ class WSClient {
           console.warn("op rechazada:", msg.reason);
           break;
         case "heartbeat":
+          if (typeof msg.serverTime === "number" && typeof msg.sentAt === "number") {
+            const now = Date.now();
+            useStore.setState({ serverClockOffsetMs: msg.serverTime * 1000 - (msg.sentAt + now) / 2 });
+          }
           break;
       }
     };
@@ -117,7 +125,7 @@ class WSClient {
       }
       const pendingRoll = useStore.getState().dicePendingId;
       useStore.setState({
-        connected: false, snapshotReceived: false, dicePendingId: null,
+        connected: false, snapshotReceived: false, dicePendingId: null, diceAnimations: [],
         ...(pendingRoll ? { diceError: "Se cortó la conexión. Revisá el historial al reconectar para ver si llegó tu tirada." } : {}),
       });
       // cierres fatales: el server rechazó el link o la campaña dejó de

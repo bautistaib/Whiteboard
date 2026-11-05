@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -35,6 +36,7 @@ class Room:
         self.conns: list[Connection] = []
         self.seq = 0
         self.dice_rolls: deque[dict[str, Any]] = deque(maxlen=dice.HISTORY_LIMIT)
+        self.dice_lock = asyncio.Lock()
 
     def next_seq(self) -> int:
         self.seq += 1
@@ -110,6 +112,7 @@ def build_snapshot(conn: Connection) -> dict[str, Any]:
     ]
     return {
         "type": "scene.snapshot",
+        "serverTime": time.time(),
         "you": {"clientId": conn.client_id, "name": conn.name, "role": conn.role},
         "campaign": {"id": campaign.id, "name": campaign.name},
         "scene": {
@@ -268,7 +271,7 @@ async def dispatch(
     op_id = msg.get("opId")
 
     if op_type == "heartbeat":
-        await send(conn, {"type": "heartbeat"})
+        await send(conn, {"type": "heartbeat", "serverTime": time.time(), "sentAt": msg.get("sentAt")})
         return
 
     # ---- efímeras: no persisten ni entran al undo -----------------------
@@ -381,6 +384,15 @@ async def dispatch(
 
 
 async def handle_dice_roll(
+    conn: Connection, room: Room, payload: Any, op_id: Any
+) -> None:
+    # Dos jugadores pueden tirar a la vez: todos deben recibir el mismo orden
+    # para programar las animaciones de la mesa de forma idéntica.
+    async with room.dice_lock:
+        await _handle_dice_roll(conn, room, payload, op_id)
+
+
+async def _handle_dice_roll(
     conn: Connection, room: Room, payload: Any, op_id: Any
 ) -> None:
     try:

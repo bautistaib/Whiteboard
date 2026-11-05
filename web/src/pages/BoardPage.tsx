@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Board from "../components/Board";
 import DicePanel from "../components/DicePanel";
+import DiceOverlay from "../components/DiceOverlay";
 import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
 import Toolbar, { TOOLS } from "../components/Toolbar";
@@ -147,6 +148,7 @@ export default function BoardPage() {
         <Board />
         <LibraryPanel />
         <DicePanel />
+        <DiceOverlay />
       </div>
     </div>
   );
