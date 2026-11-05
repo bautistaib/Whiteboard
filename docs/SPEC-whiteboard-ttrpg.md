@@ -66,6 +66,14 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG por Discord, self-
   - Ctrl+Z aplica la inversa como una operación nueva que se broadcastea a todos (no es rollback de estado global).
   - Best-effort ante conflictos: si el objeto ya no existe (otro lo borró), ese item se descarta y se deshace el anterior; si otro lo modificó después, la inversa pisa con last-writer-wins. Semántica simple y predecible, sin transformación de operaciones.
 
+### 9. Dados integrados (ampliación de scope)
+
+- DM y jugadores pueden hacer tiradas públicas desde un panel integrado al whiteboard, con dados rápidos d4/d6/d8/d10/d12/d20/d100 y fórmulas de sumas/restas de dados y modificadores (`1d20+5`, `2d6+1d4-2`).
+- `khN` / `klN` conserva los N dados mayores/menores; accesos rápidos de ventaja/desventaja (`2d20kh1` / `2d20kl1`). No aplica reglas de ningún sistema.
+- El servidor valida la fórmula y genera todos los resultados aleatorios; transmite a toda la campaña autor, etiqueta opcional, fórmula normalizada, total y desglose con dados descartados. El cliente nunca calcula resultados ni encola tiradas sin conexión.
+- Historial acotado a las últimas 50 tiradas **por campaña, solo en memoria**, compartido entre escenas y reenviado en snapshots al conectar/reconectar. Se pierde al reiniciar el servidor. No crea tablas ni objetos de escena y no participa del undo/redo.
+- Límites: 200 caracteres, 20 términos, 100 dados en total, 2–1000 caras por dado y modificadores de hasta 100000 por término; etiquetas de hasta 80 caracteres. La fórmula debe incluir al menos un dado.
+
 ## Fuera del MVP (backlog v2)
 
 - Fog of war (revelado progresivo por el DM) — **confirmado para v2**
@@ -78,7 +86,7 @@ Whiteboard colaborativo en tiempo real para sesiones de TTRPG por Discord, self-
 - Capa oculta del DM (preparar cosas sin que se vean)
 - Integración con el bot de Discord existente
 
-**No-goals permanentes:** fichas de personaje, motor de reglas, dados, chat, audio/video (todo eso ya lo resuelve Discord o queda fuera de alcance).
+**No-goals permanentes:** fichas de personaje, motor de reglas, chat, audio/video (todo eso ya lo resuelve Discord o queda fuera de alcance).
 
 ## Arquitectura
 

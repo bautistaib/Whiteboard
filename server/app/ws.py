@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import WebSocket
 
-from . import db, ops
+from . import db, dice, ops
 from .state import AppState, Role, state
 from .undo import undo_manager
 
@@ -31,6 +34,7 @@ class Room:
     def __init__(self) -> None:
         self.conns: list[Connection] = []
         self.seq = 0
+        self.dice_rolls: deque[dict[str, Any]] = deque(maxlen=dice.HISTORY_LIMIT)
 
     def next_seq(self) -> int:
         self.seq += 1
@@ -119,6 +123,7 @@ def build_snapshot(conn: Connection) -> dict[str, Any]:
         ],
         "objects": [_object_json(o) for o in state.scene_objects(scene.id)],
         "users": presence_list(get_room(conn.campaign_id)),
+        "diceRolls": list(get_room(conn.campaign_id).dice_rolls),
         "library": {
             "assets": [
                 {
@@ -267,6 +272,9 @@ async def dispatch(
         return
 
     # ---- efímeras: no persisten ni entran al undo -----------------------
+    if op_type == "dice.roll":
+        await handle_dice_roll(conn, room, payload, op_id)
+        return
     if op_type == "cursor.move":
         conn.cursor = (payload.get("x", 0), payload.get("y", 0))
         await broadcast(
@@ -370,6 +378,40 @@ async def dispatch(
             },
         },
     )
+
+
+async def handle_dice_roll(
+    conn: Connection, room: Room, payload: Any, op_id: Any
+) -> None:
+    try:
+        if not isinstance(op_id, str) or not 1 <= len(op_id) <= 128:
+            raise dice.DiceError("La tirada necesita un identificador válido.")
+        # Reenviar el mismo pedido no genera una segunda tirada.
+        previous = next((r for r in room.dice_rolls
+                         if r["opId"] == op_id and r["clientId"] == conn.client_id), None)
+        if previous is not None:
+            await send(conn, {"type": "dice.result", "roll": previous})
+            return
+        if not isinstance(payload, dict):
+            raise dice.DiceError("El pedido de tirada debe ser un objeto.")
+        label = payload.get("label", "")
+        if not isinstance(label, str) or len(label) > 80:
+            raise dice.DiceError("La etiqueta puede tener hasta 80 caracteres.")
+        result = dice.roll_expression(payload.get("expression"))
+    except dice.DiceError as exc:
+        await send(conn, {"type": "dice.error", "opId": op_id, "reason": str(exc)})
+        return
+    roll = {
+        **result,
+        "id": uuid.uuid4().hex,
+        "opId": op_id,
+        "clientId": conn.client_id,
+        "author": conn.name,
+        "label": label.strip(),
+        "createdAt": time.time(),
+    }
+    room.dice_rolls.append(roll)
+    await broadcast(room, {"type": "dice.result", "roll": roll})
 
 
 async def handle_undo_redo(
