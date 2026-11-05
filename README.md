@@ -66,6 +66,7 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 - **Fondos/mapas**: el DM sube el mapa, calibra la grilla encima y los tokens snapean correctamente.
 - **Dibujo**: lápiz, resaltador, rectángulos, círculos, líneas, flechas y texto. Opacidad, trazo punteado y relleno de formas. Con el **modo avanzado** (🎨): estabilizador, ancho por presión o velocidad, spray, balde de pintura, mezcla multiplicar/pantalla, simetría y cuentagotas. Cualquier dibujo se puede **convertir en token** reutilizable.
 - **Calidad de vida en combate**: duplicar tokens (Ctrl+D), multi-selección y movimiento en grupo, badges de estado (☠️🔥🧊…), plantillas de área (círculo/cono/línea medidas en celdas), *"seguir al DM"* (sincroniza tu cámara con la del DM), **ping** con click de la rueda (o mantener presionado en táctil), y **deshacer/rehacer por usuario** (Ctrl+Z / Ctrl+Shift+Z).
+- **Dados integrados**: abrí **🎲 Dados** en la barra superior. Un click tira d4, d6, d8, d10, d12, d20 o d100; también podés escribir fórmulas como `1d20+5` o `2d6+1d4-2`, ponerles una etiqueta y repetirlas desde el historial. Ventaja y desventaja tiran `2d20kh1` / `2d20kl1`; `kh` conserva los dados mayores y `kl` los menores (ej.: `4d6kh3`). Toda la mesa ve quién tiró, el total y cada dado, incluidos los descartados. Las últimas 50 tiradas se conservan entre escenas y al reconectar, hasta reiniciar el servidor.
 
 ## Controles rápidos
 
@@ -88,6 +89,7 @@ Copiá la carpeta `data` (dentro de `Documentos\ttrpg-board`). Ahí está absolu
 | Volver a la escena anterior | Alt + flecha izquierda |
 | Duplicar token | Ctrl+D |
 | Exportar lo visible como PNG | Botón 📷 de la barra de herramientas (ideal para el recap en Discord) |
+| Tirar dados | Botón **🎲 Dados** arriba → dado rápido o fórmula + Enter. Esc cierra el panel |
 | Borrar una escena | ✕ en la pestaña de la escena (solo DM, no la activa) |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Shift+Z |
 | Borrar selección | Supr |

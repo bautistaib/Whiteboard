@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Board from "../components/Board";
+import DicePanel from "../components/DicePanel";
 import LibraryPanel from "../components/LibraryPanel";
 import SceneTabs from "../components/SceneTabs";
 import Toolbar, { TOOLS } from "../components/Toolbar";
@@ -28,6 +29,9 @@ export default function BoardPage() {
   const setTunnelBannerOpen = useStore((s) => s.setTunnelBannerOpen);
   const users = useStore((s) => s.users);
   const fatalReason = useStore((s) => s.fatalReason);
+  const diceOpen = useStore((s) => s.diceOpen);
+  const diceUnread = useStore((s) => s.diceUnread);
+  const setDiceOpen = useStore((s) => s.setDiceOpen);
   const [rosterOpen, setRosterOpen] = useState(false);
 
   // name se omite de las deps a propósito: el rename viaja por
@@ -123,6 +127,15 @@ export default function BoardPage() {
             🔗 Link
           </button>
         )}
+        <button
+          id="dice-toggle"
+          className={`mini dice-toggle ${diceOpen ? "active" : ""}`}
+          aria-expanded={diceOpen}
+          aria-controls="dice-panel"
+          onClick={() => setDiceOpen(!diceOpen)}
+        >
+          🎲 Dados{diceUnread > 0 && <span className="dice-unread" aria-label={`${diceUnread} ${diceUnread === 1 ? "tirada nueva" : "tiradas nuevas"}`}>{diceUnread}</span>}
+        </button>
         <ThemeToggle />
         <span className={`conn ${connected ? "ok" : "off"}`}>
           {connected ? "conectado" : "reconectando…"}
@@ -133,6 +146,7 @@ export default function BoardPage() {
         <Toolbar />
         <Board />
         <LibraryPanel />
+        <DicePanel />
       </div>
     </div>
   );

@@ -26,12 +26,13 @@ Whiteboard/
       db.py                   modelos SQLModel + engine WAL + repo (load_all/upsert/delete)
       state.py                estado autoritativo en memoria + dirty tracking + flush ~1 s
       ws.py                   endpoint WS, salas por campaña, dispatch de ops, snapshots
+      dice.py                 parser acotado de fórmulas y generación autoritativa de dados
       ops.py                  validación de permisos, aplicación, generación de inversas
       undo.py                 pilas de undo/redo por usuario (solo memoria, cap 50)
       grid.py                 GridSystem: SquareGrid + HexGrid (axial, flat/pointy)
       uploads.py              validación + recompresión WebP (mapas ≤4096, tokens ≤512, 10 MB)
       tunnel.py               subproceso cloudflared, parseo de URL, reintento automático
-    tests/                    pytest (75 tests)
+    tests/                    pytest (154 tests)
   web/
     src/
       store.ts                zustand: snapshot de escena, presence, cámara, selección, tools
@@ -92,7 +93,16 @@ Escena (solo DM, no entran al undo): `scene.switch/create/rename/delete/setGrid/
 
 Meta: `undo` / `redo`.
 
-Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync` (solo DM, relay a seguidores), `heartbeat`.
+Efímeras (no persisten, no entran al undo): `cursor.move`, `ping`, `camera.sync` (solo DM, relay a seguidores), `presence.rename`, `heartbeat`, `dice.roll`.
+
+### Dados
+
+- El cliente manda `{type: "dice.roll", opId, payload: {expression, label?}}`. Solo con conexión y snapshot listos: las tiradas nunca se encolan para ejecutarse al reconectar.
+- `dice.py` parsea la fórmula completa antes de tirar, sin `eval`. Admite sumas/restas de `NdM`, constantes y sufijos `khN`/`klN` (conservar mayores/menores). Usa `secrets.randbelow(M) + 1` para cada dado. Límites: 200 caracteres, 20 términos, 100 dados totales, 2–1000 caras, modificador ≤100000 por término y al menos un dado.
+- El servidor fija identidad, timestamp e ID; ignora cualquier resultado o autor enviado por el cliente. Broadcast `{type: "dice.result", roll: {id, opId, clientId, author, label, createdAt, expression, total, terms}}` a toda la sala, incluido el emisor. `terms` distingue `dice` (caras, valores, máscara `kept`, subtotal firmado) de `constant` (valor y subtotal firmado). Timestamp Unix en segundos.
+- Errores: `{type: "dice.error", opId, reason}` solo al emisor. El panel los muestra y permite corregir sin desconectar.
+- `Room.dice_rolls` es un deque de 50 entradas; se incluye como `diceRolls` en cada snapshot. Sobrevive a desconexiones y cambios de escena; se descarta al reiniciar o borrar la campaña. No toca SQLite ni pilas de undo/redo. Un pedido repetido con el mismo `(clientId, opId)` se responde con el resultado original mientras siga en el historial, sin tirar ni volver a emitir a toda la sala.
+- `DicePanel.tsx`: dados rápidos, fórmula, etiqueta, ventaja/desventaja, resultado reciente e historial con desglose. El botón superior cuenta nuevas tiradas mientras el panel está cerrado. El store deduplica resultados por ID.
 
 ### Permisos
 
@@ -184,7 +194,7 @@ Para probar el server sirviendo el bundle (modo producción): `npm run build` en
 
 ```powershell
 cd server
-.\.venv\Scripts\pytest            # 87 tests
+.\.venv\Scripts\pytest            # 154 tests
 npx pyright                       # type checking (config canónica en pyrightconfig.json)
 
 cd web
@@ -202,6 +212,7 @@ Cobertura de tests actual:
 | Escenas | `test_ws_scenes.py` | create/rename/delete/setGrid/setBackground, switch con snapshot fresco a todos, **ops post-switch aplican sobre la escena nueva** (regresión: escena stale), switch a escena inexistente (error limpio), objetos por escena, duplicate→`token.add`, setVariant (swap de asset/tamaño) |
 | Biblioteca | `test_library.py` | personaje+variante automáticos, variante en personaje existente, permisos de borrado, cascada (variantes + personaje vacío), borrado de archivo, path traversal, `/api/tunnel` solo DM |
 | Túnel/flush | `test_tunnel.py` | regex de URL sobre salida real de cloudflared, falsos positivos, flush solo-dirty, add+delete en la misma ventana |
+| Dados | `test_dice.py` | parser, modificadores, conservar mayores/menores y empates, límites y fórmulas inválidas antes de generar azar; broadcast idéntico, identidad autoritativa, reconexión/cambio de escena, historial acotado, deduplicación, aislamiento por campaña, errores recuperables y ausencia de efectos en persistencia/undo/redo |
 
 Sin tests automatizados (verificación manual con dos navegadores): latencia percibida (<200 ms), animaciones de ping, drag multi-touch, follow-DM end-to-end.
 

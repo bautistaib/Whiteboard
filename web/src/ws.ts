@@ -17,7 +17,7 @@ class WSClient {
   connect(token: string, name: string, clientId: string) {
     this.token = token;
     this.closedByUser = false;
-    useStore.setState({ fatalReason: null });
+    useStore.setState({ fatalReason: null, diceRolls: [], diceUnread: 0, dicePendingId: null, diceError: null });
     this.open(name, clientId);
   }
 
@@ -77,6 +77,14 @@ class WSClient {
         case "ping":
           st.addPing(msg.x, msg.y, msg.name);
           break;
+        case "dice.result":
+          st.addDiceRoll(msg.roll);
+          break;
+        case "dice.error":
+          if (msg.opId === st.dicePendingId) {
+            useStore.setState({ dicePendingId: null, diceError: msg.reason });
+          }
+          break;
         case "camera":
           if (useStore.getState().followDm) {
             st.setCamera({ x: msg.x, y: msg.y, scale: msg.scale });
@@ -107,7 +115,11 @@ class WSClient {
         clearInterval(this.heartbeatTimer);
         this.heartbeatTimer = null;
       }
-      useStore.setState({ connected: false, snapshotReceived: false });
+      const pendingRoll = useStore.getState().dicePendingId;
+      useStore.setState({
+        connected: false, snapshotReceived: false, dicePendingId: null,
+        ...(pendingRoll ? { diceError: "Se cortó la conexión. Revisá el historial al reconectar para ver si llegó tu tirada." } : {}),
+      });
       // cierres fatales: el server rechazó el link o la campaña dejó de
       // existir — reconectar sería un loop inútil
       if (ev.code === 4401 || ev.code === 4409) {
@@ -139,6 +151,19 @@ class WSClient {
     } else {
       this.queue.push(text);
     }
+  }
+
+  /** Las tiradas requieren conexión y nunca se encolan para más tarde. */
+  rollDice(expression: string, label: string) {
+    const st = useStore.getState();
+    if (this.ws?.readyState !== WebSocket.OPEN || !st.snapshotReceived) {
+      useStore.setState({ diceError: "Esperá a estar conectado para tirar los dados." });
+      return;
+    }
+    if (st.dicePendingId) return;
+    const opId = uuid();
+    useStore.setState({ dicePendingId: opId, diceError: null });
+    this.ws.send(JSON.stringify({ type: "dice.roll", opId, payload: { expression, label } }));
   }
 }
 

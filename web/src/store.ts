@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { defaultGridConfig, normalizeGridConfig } from "./grid";
 import type { GridConfig } from "./grid";
+import { DICE_HISTORY_LIMIT, type DiceRoll } from "./dice";
 
 /** Lectura/escritura segura de localStorage (nunca rompe si no está disponible). */
 export function lsGet(key: string): string | null {
@@ -217,6 +218,11 @@ interface BoardState {
   users: UserInfo[];
   cursors: Record<string, { x: number; y: number; name: string }>;
   pings: PingInfo[];
+  diceRolls: DiceRoll[];
+  diceOpen: boolean;
+  diceUnread: number;
+  dicePendingId: string | null;
+  diceError: string | null;
   library: Library;
   tunnelUrl: string | null;
 
@@ -268,6 +274,8 @@ interface BoardState {
   applyCursor: (clientId: string, x: number, y: number) => void;
   addPing: (x: number, y: number, name: string) => void;
   removePing: (id: number) => void;
+  addDiceRoll: (roll: DiceRoll) => void;
+  setDiceOpen: (open: boolean) => void;
   setSceneUpdate: (msg: any) => void;
   setLibrary: (lib: Library) => void;
   setTunnelUrl: (url: string | null) => void;
@@ -324,6 +332,11 @@ export const useStore = create<BoardState>((set, get) => ({
   users: [],
   cursors: {},
   pings: [],
+  diceRolls: [],
+  diceOpen: false,
+  diceUnread: 0,
+  dicePendingId: null,
+  diceError: null,
   library: { assets: [], characters: [], variants: [] },
   tunnelUrl: null,
 
@@ -374,6 +387,7 @@ export const useStore = create<BoardState>((set, get) => ({
       library: msg.library,
       selection: [],
       pings: [],
+      diceRolls: (msg.diceRolls ?? []).slice(-DICE_HISTORY_LIMIT),
       measure: null,
     });
   },
@@ -455,6 +469,19 @@ export const useStore = create<BoardState>((set, get) => ({
   },
 
   removePing: (id) => set((st) => ({ pings: st.pings.filter((p) => p.id !== id) })),
+
+  addDiceRoll: (roll) => set((st) => {
+    const duplicate = st.diceRolls.some((r) => r.id === roll.id);
+    const ownResponse = roll.clientId === st.clientId && roll.opId === st.dicePendingId;
+    return {
+      diceRolls: duplicate ? st.diceRolls : [...st.diceRolls, roll].slice(-DICE_HISTORY_LIMIT),
+      diceUnread: duplicate || st.diceOpen ? st.diceUnread : Math.min(st.diceUnread + 1, DICE_HISTORY_LIMIT),
+      dicePendingId: ownResponse ? null : st.dicePendingId,
+      diceError: ownResponse ? null : st.diceError,
+    };
+  }),
+
+  setDiceOpen: (open) => set((st) => ({ diceOpen: open, diceUnread: open ? 0 : st.diceUnread })),
 
   setSceneUpdate: (msg) =>
     set((st) => ({
