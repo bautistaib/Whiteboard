@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { diceColor, type DiceRoll } from "../dice";
+import { diceColor, type DiceRoll, type DiceVisibility } from "../dice";
 import { useStore } from "../store";
 import { wsClient } from "../ws";
 
@@ -14,6 +14,7 @@ export default function DicePanel() {
   const error = useStore((s) => s.diceError);
   const [expression, setExpression] = useState("1d20");
   const [label, setLabel] = useState("");
+  const [visibility, setVisibility] = useState<DiceVisibility>("public");
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -26,11 +27,11 @@ export default function DicePanel() {
 
   const quickRoll = (formula: string) => {
     setExpression(formula);
-    wsClient.rollDice(formula, label);
+    wsClient.rollDice(formula, label, visibility);
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    wsClient.rollDice(expression, label);
+    wsClient.rollDice(expression, label, visibility);
   };
 
   return (
@@ -50,7 +51,16 @@ export default function DicePanel() {
         <h2 id="dice-title">🎲 Dados</h2>
         <button className="mini" aria-label="Cerrar dados" onClick={() => setOpen(false)}>✕</button>
       </div>
-      <p className="muted small dice-intro">Las tiradas son públicas: toda la mesa ve el mismo resultado.</p>
+      <label className="dice-visibility" htmlFor="dice-visibility">
+        Visibilidad
+        <select id="dice-visibility" value={visibility} onChange={(event) => setVisibility(event.target.value as DiceVisibility)}>
+          <option value="public">Pública</option>
+          <option value="screen">Pantalla (solo vos)</option>
+        </select>
+      </label>
+      <p className="muted small dice-intro">{visibility === "screen"
+        ? "Solo vos ves las caras y el total. El resto ve la animación con caras ocultas y ?? como total."
+        : "Toda la mesa ve las caras y el total."}</p>
       <div className="dice-quick" aria-label="Dados rápidos">
         {QUICK_DICE.map((sides) => (
           <button key={sides} disabled={disabled} title={`Tirar 1d${sides}`} onClick={() => quickRoll(`1d${sides}`)}>
@@ -91,7 +101,7 @@ export default function DicePanel() {
       {error && <div className="error small" role="alert">{error}</div>}
       {!connected && <div className="muted small">Reconectando… Podrás tirar cuando vuelva la conexión.</div>}
       <div className="dice-latest" role="status" aria-live="polite" aria-atomic="true">
-        {latest ? <><span>{latest.author}: {latest.expression}</span><strong>{latest.total}</strong></> : <span>Listo para la primera tirada.</span>}
+        {latest ? <><span>{latest.author}: {latest.expression}</span><strong>{latest.total ?? "??"}</strong></> : <span>Listo para la primera tirada.</span>}
       </div>
       <h3>Historial de la mesa <span className="muted">({rolls.length}/50)</span></h3>
       <p className="muted small dice-history-hint">Se conserva entre escenas y al reconectar; se vacía al reiniciar el servidor.</p>
@@ -109,13 +119,14 @@ function RollEntry({ roll, onRepeat, disabled }: { roll: DiceRoll; onRepeat: () 
       <div className="dice-entry-head">
         <span className="dice-owner-color" style={{ backgroundColor: diceColor(roll) }} aria-hidden="true" />
         <strong>{roll.author}</strong>
+        {roll.visibility === "screen" && <span className="muted small">Pantalla</span>}
         <time dateTime={new Date(roll.createdAt * 1000).toISOString()}>
           {new Date(roll.createdAt * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })}
         </time>
       </div>
       {roll.label && <div className="dice-label">{roll.label}</div>}
-      <div className="dice-entry-result"><code>{roll.expression}</code><strong>{roll.total}</strong></div>
-      <div className="dice-breakdown" aria-label="Desglose de la tirada">
+      <div className="dice-entry-result"><code>{roll.expression}</code><strong>{roll.total ?? "??"}</strong></div>
+      {roll.hidden ? <p className="muted small">Resultado detrás de la pantalla.</p> : <div className="dice-breakdown" aria-label="Desglose de la tirada">
         {roll.terms.map((term, i) => (
           <span className="dice-term" key={i}>
             {(i > 0 || term.sign < 0) && <span>{term.sign < 0 ? "−" : "+"}</span>}
@@ -129,7 +140,7 @@ function RollEntry({ roll, onRepeat, disabled }: { roll: DiceRoll; onRepeat: () 
             </>}
           </span>
         ))}
-      </div>
+      </div>}
       <button className="mini dice-repeat" disabled={disabled} title={`Volver a tirar ${roll.expression}`} onClick={onRepeat}>Repetir fórmula</button>
     </li>
   );

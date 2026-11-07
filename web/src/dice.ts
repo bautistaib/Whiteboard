@@ -14,7 +14,9 @@ export type DiceTerm = {
   subtotal: number;
 };
 
-export interface DiceRoll {
+export type DiceVisibility = "public" | "screen";
+
+interface DiceRollInfo {
   id: string;
   opId: string;
   clientId: string;
@@ -23,9 +25,18 @@ export interface DiceRoll {
   label: string;
   createdAt: number;
   expression: string;
+  visibility?: DiceVisibility;
+}
+
+export type DiceRoll = DiceRollInfo & ({
+  hidden?: false;
   total: number;
   terms: DiceTerm[];
-}
+} | {
+  hidden: true;
+  total: null;
+  terms: { kind: "dice"; notation: string; sign: number; sides: number; count: number }[];
+});
 
 export const DICE_HISTORY_LIMIT = 50;
 

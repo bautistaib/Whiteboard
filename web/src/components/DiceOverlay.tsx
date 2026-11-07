@@ -71,14 +71,14 @@ function AnimatedRoll({ animation }: { animation: DiceAnimation }) {
         <div className="dice-tray-heading">
           <span className="dice-tray-icon" aria-hidden="true">●</span>
           <div><strong>{roll.author}</strong><span>{roll.label || roll.expression}</span></div>
-          <span className="dice-tray-state">{phase === "settled" ? "Resultado" : "Rodando dados…"}</span>
+          <span className="dice-tray-state">{phase === "settled" ? (roll.visibility === "screen" ? "Pantalla" : "Resultado") : "Rodando dados…"}</span>
         </div>
         <div className="dice-stage" ref={host} />
         {fallback && <div className="dice-3d-fallback">La vista 3D no está disponible en este navegador.</div>}
         <div className="dice-tray-result" role="status" aria-live="polite" aria-atomic="true">
           {phase === "settled" ? <>
-            <span>{roll.expression}</span><strong>{roll.total}</strong>
-            <span className="dice-tray-detail">{roll.terms.filter((t) => t.kind === "dice").map((term) => term.kind === "dice" ? `${term.notation}: ${term.rolls.map((n, i) => term.kept[i] ? n : `(${n})`).join(", ")}` : "").join(" · ")}</span>
+            <span>{roll.expression}</span><strong>{roll.total ?? "??"}</strong>
+            <span className="dice-tray-detail">{roll.hidden ? "Resultado detrás de la pantalla." : roll.terms.filter((t) => t.kind === "dice").map((term) => term.kind === "dice" ? `${term.notation}: ${term.rolls.map((n, i) => term.kept[i] ? n : `(${n})`).join(", ")}` : "").join(" · ")}</span>
           </> : <span>{dice.length} {dice.length === 1 ? "dado en la mesa" : "dados en la mesa"}</span>}
         </div>
       </section>

@@ -11,6 +11,7 @@ const CELL_SIZE = 128;
 
 function faceLabels(die: VisualDie, shape: DieShape): string[] {
   return shape.faces.map((face, i) => {
+    if (die.value === null) return "";
     if (die.kind === "tens") return String(i * 10).padStart(2, "0");
     if (die.kind === "units") return String(i);
     if (die.kind === "custom") return face.normal.z > 0.9 ? `${die.value}` : "";
@@ -117,7 +118,7 @@ export function createDiceScene(host: HTMLElement, roll: DiceRoll, onContextLost
     const shadow = new Mesh(shadowGeometry, shadowMaterial);
     shadow.position.z = 0.005;
     scene.add(shadow);
-    const faceIndex = die.kind === "custom" ? shape.faces.findIndex((f) => f.normal.z > 0.9)
+    const faceIndex = die.value === null ? 0 : die.kind === "custom" ? shape.faces.findIndex((f) => f.normal.z > 0.9)
       : die.kind === "standard" ? die.value - 1 : die.value;
     const motion = planMotion(roll.id, index, dice.length);
     return {

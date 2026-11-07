@@ -7,7 +7,7 @@ import {
   planMotion, addDiceAnimation, sampleMotion, visualDice, type DiceAnimation,
 } from "./animation";
 
-function roll(id = "roll1", sides = 20, values = [4, 18]): DiceRoll {
+function roll(id = "roll1", sides = 20, values = [4, 18]): Extract<DiceRoll, { total: number }> {
   return {
     id, opId: id, clientId: "p1", author: "Ana", label: "", createdAt: 1000,
     expression: `2d${sides}kh1`, total: values[1],
@@ -26,6 +26,26 @@ test("los modificadores no crean dados y los dados especiales conservan su valor
   const result = roll("custom", 37, [12, 35]);
   result.terms.push({ kind: "constant", notation: "5", sign: 1, value: 5, subtotal: 5 });
   assert.deepEqual(visualDice(result).map((d) => [d.kind, d.sides, d.value]), [["custom", 37, 12], ["custom", 37, 35]]);
+});
+
+test("pantalla anima los mismos tipos y cantidad de dados sin valores ni descartados", () => {
+  const hidden: DiceRoll = {
+    ...roll(), visibility: "screen", hidden: true, total: null,
+    terms: [
+      { kind: "dice", notation: "2d20kh1", sides: 20, sign: 1, count: 2 },
+      { kind: "dice", notation: "1d100", sides: 100, sign: 1, count: 1 },
+      { kind: "dice", notation: "1d37", sides: 37, sign: -1, count: 1 },
+    ],
+  };
+  const dice = visualDice(hidden);
+  assert.deepEqual(dice.map((d) => d.kind), ["standard", "standard", "tens", "units", "custom"]);
+  assert.deepEqual(dice.map((d) => d.sides), [20, 20, 10, 10, 37]);
+  assert.ok(dice.every((d) => d.value === null && d.kept));
+  const animation = addDiceAnimation([], hidden, 1000000);
+  assert.equal(animation.length, 1);
+  assert.equal(animation[0].startsAt, hidden.createdAt * 1000 + ROLL_DELAY_MS);
+  // El autor sigue viendo el resultado completo aunque use pantalla.
+  assert.deepEqual(visualDice({ ...roll(), visibility: "screen" }), visualDice(roll()));
 });
 
 test("dos clientes reproducen la misma trayectoria, independientemente de los frames", () => {

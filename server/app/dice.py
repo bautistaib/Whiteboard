@@ -116,3 +116,21 @@ def roll_expression(expression: object) -> dict[str, Any]:
             })
         total += subtotal
     return {"expression": normalized, "total": total, "terms": parts}
+
+
+def roll_for_client(roll: dict[str, Any], client_id: str) -> dict[str, Any]:
+    """La pantalla oculta los resultados incluso en snapshots y reconexiones."""
+    if roll.get("visibility") != "screen" or roll["clientId"] == client_id:
+        return roll
+    return {
+        **roll,
+        "hidden": True,
+        "total": None,
+        "terms": [
+            {
+                "kind": "dice", "notation": term["notation"], "sign": term["sign"],
+                "sides": term["sides"], "count": len(term["rolls"]),
+            }
+            for term in roll["terms"] if term["kind"] == "dice"
+        ],
+    }

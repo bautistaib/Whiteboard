@@ -13,7 +13,7 @@ export interface DiceAnimation {
 
 export interface VisualDie {
   sides: number;
-  value: number;
+  value: number | null;
   kept: boolean;
   termIndex: number;
   kind: "standard" | "tens" | "units" | "custom";
@@ -22,6 +22,13 @@ export interface VisualDie {
 const STANDARD_SIDES = new Set([4, 6, 8, 10, 12, 20]);
 
 export function visualDice(roll: DiceRoll): VisualDie[] {
+  if (roll.hidden) return roll.terms.flatMap((term, termIndex) => {
+    const base = { value: null, kept: true, termIndex };
+    return Array.from({ length: term.count }).flatMap((): VisualDie[] => term.sides === 100 ? [
+      { ...base, sides: 10, kind: "tens" },
+      { ...base, sides: 10, kind: "units" },
+    ] : [{ ...base, sides: term.sides, kind: STANDARD_SIDES.has(term.sides) ? "standard" : "custom" }]);
+  });
   return roll.terms.flatMap((term, termIndex) => term.kind === "constant" ? [] : term.rolls.flatMap((value, i): VisualDie[] => {
     const base = { kept: term.kept[i], termIndex };
     if (term.sides === 100) {

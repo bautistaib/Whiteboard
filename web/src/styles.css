@@ -694,6 +694,8 @@ button.full {
 .dice-panel h3 { font-size: 13px; }
 .dice-intro,
 .dice-history-hint { line-height: 1.4; }
+.dice-visibility { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.dice-visibility select { min-width: 0; }
 .dice-quick {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

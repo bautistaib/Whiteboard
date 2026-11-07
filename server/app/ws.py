@@ -137,7 +137,8 @@ def build_snapshot(conn: Connection) -> dict[str, Any]:
         ],
         "objects": [_object_json(o) for o in state.scene_objects(scene.id)],
         "users": presence_list(get_room(conn.campaign_id)),
-        "diceRolls": list(get_room(conn.campaign_id).dice_rolls),
+        "diceRolls": [dice.roll_for_client(roll, conn.client_id)
+                      for roll in get_room(conn.campaign_id).dice_rolls],
         "library": {
             "assets": [
                 {
@@ -413,13 +414,16 @@ async def _handle_dice_roll(
         previous = next((r for r in room.dice_rolls
                          if r["opId"] == op_id and r["clientId"] == conn.client_id), None)
         if previous is not None:
-            await send(conn, {"type": "dice.result", "roll": previous})
+            await send(conn, {"type": "dice.result", "roll": dice.roll_for_client(previous, conn.client_id)})
             return
         if not isinstance(payload, dict):
             raise dice.DiceError("El pedido de tirada debe ser un objeto.")
         label = payload.get("label", "")
         if not isinstance(label, str) or len(label) > 80:
             raise dice.DiceError("La etiqueta puede tener hasta 80 caracteres.")
+        visibility = payload.get("visibility", "public")
+        if visibility not in ("public", "screen"):
+            raise dice.DiceError("Elegí una tirada pública o en modo pantalla.")
         result = dice.roll_expression(payload.get("expression"))
     except dice.DiceError as exc:
         await send(conn, {"type": "dice.error", "opId": op_id, "reason": str(exc)})
@@ -432,10 +436,19 @@ async def _handle_dice_roll(
         "author": conn.name,
         "color": room.dice_color(conn.client_id),
         "label": label.strip(),
+        "visibility": visibility,
         "createdAt": time.time(),
     }
     room.dice_rolls.append(roll)
-    await broadcast(room, {"type": "dice.result", "roll": roll})
+    dead: list[Connection] = []
+    for recipient in room.conns:
+        try:
+            await send(recipient, {"type": "dice.result", "roll": dice.roll_for_client(roll, recipient.client_id)})
+        except Exception:  # noqa: BLE001
+            dead.append(recipient)
+    for recipient in dead:
+        if recipient in room.conns:
+            room.conns.remove(recipient)
 
 
 async def handle_undo_redo(

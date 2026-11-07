@@ -117,6 +117,58 @@ def test_roll_broadcasts_identical_server_result_to_everyone(client, tokens, mon
             assert result["color"] == dice.PLAYER_COLORS[0]
 
 
+@pytest.mark.parametrize("roller_role,observer_role", [("player", "dm"), ("dm", "player")])
+def test_screen_roll_only_reveals_results_to_roller(client, tokens, monkeypatch, roller_role, observer_role):
+    fixed_rolls(monkeypatch, [4, 18, 37, 29])
+    roller_url = f"/ws/{tokens[roller_role]}?name=Ana&clientId=roller"
+    observer_url = f"/ws/{tokens[observer_role]}?name=Otro&clientId=observer"
+    with client.websocket_connect(observer_url) as observer:
+        receive(observer, "presence")
+        with client.websocket_connect(roller_url) as roller:
+            receive(roller, "presence")
+            result = roll(roller, "2d20kh1+1d100-1d37+5", visibility="screen")
+            hidden = receive(observer, "dice.result")["roll"]
+            assert result["total"] == 31
+            assert result["terms"][0]["rolls"] == [4, 18]
+            assert not result.get("hidden")
+            assert hidden == {
+                **result, "hidden": True, "total": None,
+                "terms": [
+                    {"kind": "dice", "notation": "2d20kh1", "sign": 1, "sides": 20, "count": 2},
+                    {"kind": "dice", "notation": "1d100", "sign": 1, "sides": 100, "count": 1},
+                    {"kind": "dice", "notation": "1d37", "sign": -1, "sides": 37, "count": 1},
+                ],
+            }
+            # Reintentar no cambia la privacidad ni consume más azar.
+            assert roll(roller, visibility="public") == result
+            dm = roller if roller_role == "dm" else observer
+            dm.send_json({"type": "scene.create", "payload": {"id": "screen-scene", "name": "Pantalla"}})
+            receive(dm, "scene.update")
+            dm.send_json({"type": "scene.switch", "payload": {"sceneId": "screen-scene"}})
+            assert receive(roller, "scene.snapshot")["diceRolls"] == [result]
+            assert receive(observer, "scene.snapshot")["diceRolls"] == [hidden]
+    with client.websocket_connect(roller_url) as roller:
+        assert receive(roller, "scene.snapshot")["diceRolls"] == [result]
+    with client.websocket_connect(observer_url) as observer:
+        assert receive(observer, "scene.snapshot")["diceRolls"] == [hidden]
+
+
+def test_simultaneous_screen_rolls_are_filtered_per_recipient(client, tokens, monkeypatch):
+    fixed_rolls(monkeypatch, [7, 12])
+    with client.websocket_connect(f"/ws/{tokens['player']}?clientId=p1") as one:
+        receive(one, "presence")
+        with client.websocket_connect(f"/ws/{tokens['player']}?clientId=p2") as two:
+            receive(two, "presence")
+            for sock, op_id in [(one, "one"), (two, "two")]:
+                sock.send_json({"type": "dice.roll", "opId": op_id, "payload": {"expression": "d20", "visibility": "screen"}})
+            first = [receive(one, "dice.result")["roll"] for _ in range(2)]
+            second = [receive(two, "dice.result")["roll"] for _ in range(2)]
+            assert [r["id"] for r in first] == [r["id"] for r in second]
+            for rolls, client_id in [(first, "p1"), (second, "p2")]:
+                for result in rolls:
+                    assert (result["total"] is None) == (result["clientId"] != client_id)
+
+
 def test_reconnect_and_scene_switch_retain_history(client, tokens):
     url = f"/ws/{tokens['dm']}?name=DM&clientId=dm"
     with client.websocket_connect(url) as dm:
@@ -147,6 +199,7 @@ def test_history_is_bounded_and_duplicate_request_does_not_reroll(client, tokens
 @pytest.mark.parametrize("payload", [
     {"expression": "101d6"}, {"expression": "d20", "label": "x" * 81},
     {"expression": "d20", "label": 5}, {"expression": {"total": 20}}, [1, 2],
+    *[{"expression": "d20", "visibility": value} for value in [None, True, 1, [], {}, "private"]],
 ])
 def test_bad_request_returns_visible_error_and_connection_survives(client, tokens, payload):
     with client.websocket_connect(f"/ws/{tokens['player']}?clientId=p1") as player:

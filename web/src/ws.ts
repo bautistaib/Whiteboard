@@ -1,6 +1,7 @@
 /** Cliente WebSocket: reconexión con backoff, cola de ops hasta el snapshot. */
 
 import { useStore } from "./store";
+import type { DiceVisibility } from "./dice";
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -162,7 +163,7 @@ class WSClient {
   }
 
   /** Las tiradas requieren conexión y nunca se encolan para más tarde. */
-  rollDice(expression: string, label: string) {
+  rollDice(expression: string, label: string, visibility: DiceVisibility = "public") {
     const st = useStore.getState();
     if (this.ws?.readyState !== WebSocket.OPEN || !st.snapshotReceived) {
       useStore.setState({ diceError: "Esperá a estar conectado para tirar los dados." });
@@ -171,7 +172,7 @@ class WSClient {
     if (st.dicePendingId) return;
     const opId = uuid();
     useStore.setState({ dicePendingId: opId, diceError: null });
-    this.ws.send(JSON.stringify({ type: "dice.roll", opId, payload: { expression, label } }));
+    this.ws.send(JSON.stringify({ type: "dice.roll", opId, payload: { expression, label, visibility } }));
   }
 }
 
